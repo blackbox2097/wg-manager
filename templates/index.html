@@ -1,0 +1,2936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>WireGuard Manager</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBiMGUwZiIvPgogIDxwb2x5Z29uIHBvaW50cz0iMTYsMyAyNyw5IDI3LDIzIDE2LDI5IDUsMjMgNSw5IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMGU2NzYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjQiIGZpbGw9IiMwMGU2NzYiLz4KICA8Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIyIiBmaWxsPSIjMGIwZTBmIi8+Cjwvc3ZnPg=="/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b0e0f;--bg2:#111518;--bg3:#181d20;--bg4:#1e252a;
+  --border:#1f2830;--border2:#2a3540;
+  --green:#00e676;--green-dim:#00c85a;--green-bg:rgba(0,230,118,.07);
+  --red:#ff4d6a;--red-bg:rgba(255,77,106,.07);
+  --yellow:#ffd166;--yellow-bg:rgba(255,209,102,.07);
+  --blue:#4ecdc4;--blue-bg:rgba(78,205,196,.07);
+  --purple:#c084fc;--purple-bg:rgba(192,132,252,.07);
+  --text:#cdd6e0;--text2:#6b808f;--text3:#3d5060;
+  --font-mono:'JetBrains Mono',monospace;--font-ui:'Syne',sans-serif;
+  --radius:6px;--trans:.18s ease;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;line-height:1.6;overflow-x:hidden}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+/* ── Layout ── */
+.app{display:flex;height:100vh;overflow:hidden;position:relative;z-index:2}
+.sidebar{width:230px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.sidebar-logo{padding:20px 18px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.logo-text{font-family:var(--font-ui);font-size:15px;font-weight:800;letter-spacing:-.3px;color:#fff}
+.logo-sub{font-size:9px;color:var(--text2);letter-spacing:1.5px;text-transform:uppercase;margin-top:1px}
+.sidebar-nav{flex:1;overflow-y:auto;padding:10px 0}
+.nav-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);padding:8px 18px 4px;font-family:var(--font-ui)}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 18px;cursor:pointer;color:var(--text2);transition:color var(--trans),background var(--trans);font-size:12.5px;font-weight:500;border-left:2px solid transparent;margin:1px 0}
+.nav-item:hover{color:var(--text);background:rgba(255,255,255,.03)}
+.nav-item.active{color:var(--green);background:var(--green-bg);border-left-color:var(--green)}
+.nav-item svg{width:14px;height:14px;flex-shrink:0}
+
+/* Interface switcher in sidebar */
+.iface-section{border-top:1px solid var(--border);padding:10px 0}
+.iface-switcher-item{display:flex;align-items:center;gap:8px;padding:7px 18px;cursor:pointer;transition:background var(--trans);border-left:2px solid transparent}
+.iface-switcher-item:hover{background:rgba(255,255,255,.03)}
+.iface-switcher-item.active{border-left-color:var(--blue);background:var(--blue-bg)}
+.iface-switcher-item .iface-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--text3)}
+.iface-switcher-item .iface-dot.up{background:var(--green);box-shadow:0 0 5px var(--green)}
+.iface-switcher-item .iface-name-txt{font-size:12px;font-weight:600;color:var(--text);flex:1}
+.iface-switcher-item .iface-peer-count{font-size:10px;color:var(--text3)}
+.iface-add-btn{display:flex;align-items:center;gap:8px;padding:7px 18px;cursor:pointer;color:var(--text3);font-size:12px;transition:color var(--trans)}
+.iface-add-btn:hover{color:var(--green)}
+
+.iface-badge{font-size:10px;padding:3px 8px;border-radius:20px;font-weight:600;cursor:pointer;transition:all var(--trans)}
+.iface-badge.up{background:var(--green-bg);color:var(--green);border:1px solid rgba(0,230,118,.25)}
+.iface-badge.down{background:var(--red-bg);color:var(--red);border:1px solid rgba(255,77,106,.25)}
+.iface-badge-name{font-size:11px;color:var(--text2);flex:1}
+
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:54px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;padding:0 24px;gap:12px;flex-shrink:0;position:relative;z-index:1}
+.topbar-title{font-family:var(--font-ui);font-size:16px;font-weight:700;color:#fff;flex:1}
+.topbar-iface{font-size:11px;color:var(--blue);background:var(--blue-bg);border:1px solid rgba(78,205,196,.2);padding:3px 10px;border-radius:20px;display:none}
+.content{flex:1;overflow-y:auto;padding:22px 24px}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono);font-size:12px;font-weight:600;border:1px solid transparent;transition:all var(--trans);white-space:nowrap;letter-spacing:.3px}
+.btn svg{width:12px;height:12px}
+.btn-primary{background:var(--green);color:#000;border-color:var(--green)}
+.btn-primary:hover{background:var(--green-dim)}
+.btn-ghost{background:transparent;color:var(--text2);border-color:var(--border2)}
+.btn-ghost:hover{background:var(--bg3);color:var(--text)}
+.btn-danger{background:var(--red-bg);color:var(--red);border-color:rgba(255,77,106,.3)}
+.btn-danger:hover{background:rgba(255,77,106,.15)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn-xs{padding:2px 7px;font-size:10px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* Views */
+.view{display:none;animation:fadeIn .18s ease;background:var(--bg);min-height:100vh}
+.fwd-banner{display:none;align-items:center;gap:10px;padding:9px 20px;background:rgba(255,209,102,.08);border-bottom:1px solid rgba(255,209,102,.2);font-size:11.5px;color:var(--yellow);flex-shrink:0}
+.fwd-banner svg{width:14px;height:14px;flex-shrink:0}
+.fwd-banner-msg{flex:1}
+.fwd-banner .btn-fix{background:rgba(255,209,102,.15);color:var(--yellow);border:1px solid rgba(255,209,102,.3);padding:3px 10px;font-size:10.5px}
+.fwd-banner .btn-fix:hover{background:rgba(255,209,102,.25)}
+#view-dashboard{background:transparent}
+.view.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Stats */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:15px 17px;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--green);opacity:.5}
+.stat-card.red::before{background:var(--red)}
+.stat-card.yellow::before{background:var(--yellow)}
+.stat-card.blue::before{background:var(--blue)}
+.stat-label{font-size:9.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text2);margin-bottom:5px}
+.stat-value{font-size:26px;font-weight:700;font-family:var(--font-ui);color:#fff;letter-spacing:-1px}
+.stat-sub{font-size:10px;color:var(--text2);margin-top:2px}
+
+/* Interface cards on dashboard */
+.iface-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:22px}
+.iface-overview-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;cursor:pointer;transition:border var(--trans)}
+.iface-overview-card:hover{border-color:var(--border2)}
+.iface-overview-card.up-card{border-left:3px solid var(--green)}
+.iface-overview-card.down-card{border-left:3px solid var(--text3)}
+.ioc-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.ioc-name{font-family:var(--font-ui);font-size:14px;font-weight:700;color:#fff;flex:1}
+.ioc-row{display:flex;justify-content:space-between;font-size:11px;padding:3px 0;color:var(--text2)}
+.ioc-row span{color:var(--text)}
+
+/* Section header */
+.section-header{display:flex;align-items:center;gap:10px;margin-bottom:13px}
+.section-title{font-family:var(--font-ui);font-size:13px;font-weight:700;color:#fff}
+.section-count{font-size:10px;background:var(--bg3);border:1px solid var(--border2);padding:2px 8px;border-radius:20px;color:var(--text2)}
+.section-sep{flex:1;height:1px;background:var(--border)}
+
+/* Table */
+.table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+table{width:100%;border-collapse:collapse}
+thead tr{border-bottom:1px solid var(--border)}
+th{padding:9px 13px;text-align:left;font-size:9.5px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);font-family:var(--font-ui);white-space:nowrap}
+td{padding:10px 13px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr{transition:background var(--trans)}
+tbody tr:hover{background:rgba(255,255,255,.015)}
+
+/* Toggle */
+.toggle-wrap{display:inline-flex;align-items:center;cursor:pointer}
+.toggle{position:relative;width:36px;height:20px;flex-shrink:0;display:block}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle-track{position:absolute;inset:0;background:var(--bg4);border:1px solid var(--border2);border-radius:10px;transition:all .25s;cursor:pointer}
+.toggle-knob{position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .25s;pointer-events:none}
+.toggle.on .toggle-track{background:var(--green);border-color:var(--green)}
+.toggle.on .toggle-knob{transform:translateX(16px)}
+
+/* Dots, tags, misc */
+.status-dot{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dot.online{background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s infinite}
+.dot.offline{background:var(--text3)}
+.dot.disabled{background:var(--border2)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.tag{display:inline-block;font-size:9.5px;padding:2px 7px;border-radius:20px;font-weight:600;letter-spacing:.3px}
+.tag-green{background:var(--green-bg);color:var(--green);border:1px solid rgba(0,230,118,.2)}
+.tag-red{background:var(--red-bg);color:var(--red);border:1px solid rgba(255,77,106,.2)}
+.tag-blue{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(78,205,196,.2)}
+.tag-yellow{background:var(--yellow-bg);color:var(--yellow);border:1px solid rgba(255,209,102,.2)}
+.tag-purple{background:var(--purple-bg);color:var(--purple);border:1px solid rgba(192,132,252,.2)}
+.tag-dim{background:var(--bg3);color:var(--text3);border:1px solid var(--border)}
+.peer-name{font-weight:600;color:#fff;font-size:12.5px}
+.peer-key{font-size:10px;color:var(--text3)}
+.peer-ip{font-size:11px;color:var(--blue)}
+.transfer .rx{color:var(--green)}
+.transfer .tx{color:var(--yellow)}
+.transfer .sep{color:var(--text3);margin:0 3px}
+.actions{display:flex;gap:5px;align-items:center}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--green);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty-state{padding:48px 20px;text-align:center;color:var(--text2)}
+.empty-state h3{font-family:var(--font-ui);font-size:16px;color:var(--text);margin-bottom:6px}
+.empty-state p{font-size:12px;margin-bottom:18px}
+
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .2s}
+.modal-bg.open{opacity:1;pointer-events:all}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:10px;width:580px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6);transform:translateY(10px);transition:transform .2s}
+.modal-bg.open .modal{transform:none}
+.modal-lg{width:820px}
+.modal-header{padding:17px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.modal-title{font-family:var(--font-ui);font-size:15px;font-weight:700;color:#fff;flex:1}
+.modal-close{width:26px;height:26px;border-radius:5px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all var(--trans)}
+.modal-close:hover{background:var(--red-bg);color:var(--red);border-color:rgba(255,77,106,.3)}
+.modal-body{padding:20px;overflow-y:auto;flex:1}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+
+/* Forms */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-group{margin-bottom:14px}
+label{display:block;font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text2);margin-bottom:5px}
+label .hint{font-size:9px;color:var(--text3);text-transform:none;letter-spacing:0;margin-left:6px;font-weight:400}
+input,textarea,select{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);padding:7px 10px;font-family:var(--font-mono);font-size:12px;transition:border var(--trans);outline:none}
+input:focus,textarea:focus,select:focus{border-color:rgba(0,230,118,.4);box-shadow:0 0 0 3px rgba(0,230,118,.06)}
+textarea{resize:vertical;min-height:56px;line-height:1.5}
+select option{background:var(--bg3)}
+.input-row{display:flex;gap:6px}
+.input-row input{flex:1}
+.form-section{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);padding:4px 0 10px;border-bottom:1px solid var(--border);margin-bottom:14px;font-family:var(--font-ui);font-weight:700}
+
+/* Config box */
+.config-box{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:13px 14px;font-size:11.5px;line-height:1.7;font-family:var(--font-mono);color:var(--text);white-space:pre;overflow-x:auto;position:relative}
+.copy-btn{position:absolute;top:7px;right:7px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--text2);cursor:pointer;font-size:10px;padding:3px 8px;transition:all var(--trans)}
+.copy-btn:hover{color:var(--green);border-color:rgba(0,230,118,.4)}
+
+/* Toast */
+.toast-wrap{position:fixed;bottom:20px;right:20px;z-index:999;display:flex;flex-direction:column;gap:7px}
+.toast{background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:9px;font-size:12px;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:toastIn .22s ease;min-width:220px;max-width:320px}
+.toast.success{border-left:3px solid var(--green)}
+.toast.error{border-left:3px solid var(--red)}
+.toast.info{border-left:3px solid var(--blue)}
+@keyframes toastIn{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+
+/* Interface view */
+.iface-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.iface-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.iface-card-title{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text2);margin-bottom:13px;font-family:var(--font-ui);font-weight:700}
+.kv-row{display:flex;justify-content:space-between;align-items:flex-start;padding:5px 0;border-bottom:1px solid var(--border)}
+.kv-row:last-child{border-bottom:none}
+.kv-key{font-size:11px;color:var(--text2);flex-shrink:0;margin-right:12px}
+.kv-val{font-size:11px;color:var(--text);text-align:right;word-break:break-all}
+
+/* Auth / Login */
+.login-wrap{position:fixed;inset:0;background:transparent;display:none;align-items:center;justify-content:center;z-index:999;overflow:hidden}
+.login-bg{position:absolute;inset:0;width:100%;height:100%}
+.login-card{background:rgba(13,21,24,0.82);border:1px solid rgba(0,230,118,.15);border-radius:12px;width:360px;padding:36px 32px;box-shadow:0 24px 80px rgba(0,0,0,.7);backdrop-filter:blur(8px)}
+.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.login-title{font-family:var(--font-ui);font-size:18px;font-weight:800;color:#fff}
+.login-sub{font-size:10px;color:var(--text2);letter-spacing:1.5px;text-transform:uppercase}
+.login-error{font-size:11px;color:var(--red);background:var(--red-bg);border:1px solid rgba(255,77,106,.2);border-radius:var(--radius);padding:8px 11px;margin-bottom:14px;display:none}
+.login-error.show{display:block}
+
+/* User badge in topbar */
+.user-badge{display:flex;align-items:center;gap:8px;padding:4px 10px 4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:20px;cursor:pointer;transition:border var(--trans);position:relative;overflow:visible}
+.user-badge:hover{border-color:var(--border2)}
+.user-avatar{width:22px;height:22px;border-radius:50%;background:var(--green-bg);border:1px solid rgba(0,230,118,.3);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--green);flex-shrink:0}
+.user-avatar.op{background:var(--blue-bg);border-color:rgba(78,205,196,.3);color:var(--blue)}
+.user-avatar.ro{background:var(--bg4);border-color:var(--border2);color:var(--text3)}
+.user-name-txt{font-size:11px;font-weight:600;color:var(--text)}
+.role-pill{font-size:9px;padding:1px 6px;border-radius:20px;font-weight:700;letter-spacing:.3px}
+.role-pill.admin{background:var(--green-bg);color:var(--green)}
+.role-pill.operator{background:var(--blue-bg);color:var(--blue)}
+.role-pill.readonly{background:var(--bg4);color:var(--text3);border:1px solid var(--border2)}
+
+/* User menu popover */
+.user-menu{display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:200;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;width:220px;box-shadow:0 8px 32px rgba(0,0,0,.5);overflow:hidden}
+.user-menu.open{display:block}
+.user-menu-header{padding:12px 14px;border-bottom:1px solid var(--border)}
+.user-menu-item{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:12px;color:var(--text2);transition:background var(--trans)}
+.user-menu-item:hover{background:rgba(255,255,255,.04);color:var(--text)}
+.user-menu-item svg{width:13px;height:13px;flex-shrink:0}
+.user-menu-item.danger{color:var(--red)}
+.user-menu-item.danger:hover{background:var(--red-bg)}
+
+/* Users table */
+.user-row-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+
+/* Platform pills */
+.platform-pill{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);transition:all .15s;font-family:var(--font-mono)}
+.platform-pill:hover{border-color:var(--border2);color:var(--text)}
+.platform-pill.active{background:var(--green-bg);color:var(--green);border-color:rgba(0,230,118,.4)}
+
+50%{opacity:.55}}
+
+/* Backup view */
+#restore-file{background:var(--bg3);border:1px solid var(--border2);color:var(--text2)}
+#restore-file::-webkit-file-upload-button{background:var(--bg4);border:1px solid var(--border2);border-radius:4px;color:var(--text2);padding:4px 10px;cursor:pointer;font-family:var(--font-mono);font-size:11px;margin-right:8px}
+#restore-file::-webkit-file-upload-button:hover{color:var(--text)}
+
+/* Interface tab bar */
+#iface-tabbar{display:none;gap:2px;padding:0 16px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+.iface-tab{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;font-size:11.5px;font-family:var(--font-mono);font-weight:600;color:var(--text2);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:color .15s,border-color .15s;letter-spacing:.3px;white-space:nowrap}
+.iface-tab:hover{color:var(--text)}
+.iface-tab.active{color:var(--green);border-bottom-color:var(--green)}
+.iface-tab svg{flex-shrink:0}
+
+/* System stats widget */
+.sys-stats{display:flex;align-items:center;gap:14px;padding:0 4px}
+.sys-stat{display:flex;align-items:center;gap:7px}
+.sys-stat-label{font-size:9.5px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;font-family:var(--font-ui)}
+.sys-bar-wrap{width:52px;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden;position:relative}
+.sys-bar{height:100%;border-radius:3px;transition:width .6s ease}
+.sys-bar.cpu{background:var(--blue)}
+.sys-bar.mem{background:var(--purple)}
+.sys-bar.warn{background:var(--yellow)}
+.sys-bar.crit{background:var(--red)}
+.sys-stat-val{font-size:10.5px;font-weight:600;color:var(--text);min-width:32px;text-align:right}
+.sys-divider{width:1px;height:20px;background:var(--border2)}
+.sys-uptime{font-size:10px;color:var(--text3)}
+
+/* Iptables builder */
+.ipt-layout{display:grid;grid-template-columns:1fr 340px;gap:14px;padding:16px}
+.ipt-left,.ipt-right{display:flex;flex-direction:column;gap:10px}
+.rule-type-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.rtb{display:flex;flex-direction:column;gap:2px;padding:9px 11px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);cursor:pointer;transition:all .15s}
+.rtb:hover{background:var(--bg4)}
+.rtb.selected{border-color:rgba(0,230,118,.45);background:var(--green-bg)}
+.rtb-icon{font-size:15px;line-height:1.2}
+.rtb-label{font-size:11px;font-weight:700;color:#fff;font-family:var(--font-ui)}
+.rtb-desc{font-size:9.5px;color:var(--text2);line-height:1.3}
+.rule-form-box{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:13px}
+.rule-form-box .form-group{margin-bottom:10px}
+.rule-form-box .form-group:last-child{margin-bottom:0}
+.rule-form-box label{font-size:9.5px;margin-bottom:4px}
+.rule-form-box input,.rule-form-box select{padding:6px 9px;font-size:11.5px}
+.action-pills{display:flex;gap:6px}
+.action-pill{flex:1;text-align:center;padding:5px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;border:1px solid var(--border2);background:var(--bg4);color:var(--text2);transition:all .15s;font-family:var(--font-ui)}
+.ap-accept.sel{background:var(--green-bg);color:var(--green);border-color:rgba(0,230,118,.4)}
+.ap-drop.sel{background:var(--red-bg);color:var(--red);border-color:rgba(255,77,106,.4)}
+.rules-list-wrap{display:flex;flex-direction:column;gap:5px;max-height:320px;overflow-y:auto;padding-right:2px}
+.rule-card{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius)}
+.rule-card-icon{font-size:14px;flex-shrink:0;margin-top:1px}
+.rule-card-body{flex:1;min-width:0}
+.rule-card-title{font-size:11.5px;font-weight:600;color:#fff;line-height:1.3}
+.rule-card-sub{font-size:10px;color:var(--text2);margin-top:1px}
+.rule-card-del{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;color:var(--text3);transition:all .15s;flex-shrink:0;background:transparent;border:none;margin-top:1px}
+.rule-card-del:hover{color:var(--red);background:var(--red-bg)}
+.cmd-preview{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;font-size:10.5px;line-height:1.7;font-family:var(--font-mono);max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.cmd-up{color:var(--green)}
+.cmd-down{color:var(--red)}
+.cmd-comment{color:var(--text3)}
+.cmd-empty{color:var(--text3);font-style:italic}
+.rpeer-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:8px}
+.rpeer-header{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;transition:background var(--trans)}
+.rpeer-header:hover{background:rgba(255,255,255,.02)}
+.rpeer-chevron{color:var(--text3);flex-shrink:0;transition:transform .2s}
+.rpeer-chevron.open{transform:rotate(180deg)}
+.rpeer-body{display:none;padding:12px 14px;border-top:1px solid var(--border)}
+.rpeer-body.open{display:block}
+</style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+<canvas id="net-canvas"  style="position:fixed;inset:0;width:100%;height:100%;z-index:998;pointer-events:none;display:none"></canvas>
+<canvas id="dash-canvas" style="position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;display:none"></canvas>
+<div class="app">
+
+<!-- ── Sidebar ── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <rect width="28" height="28" rx="6" fill="#00e676" fill-opacity=".1"/>
+      <path d="M14 4L22 8.5V19.5L14 24L6 19.5V8.5L14 4Z" stroke="#00e676" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="14" cy="14" r="3" fill="#00e676"/>
+    </svg>
+    <div><div class="logo-text">WG Manager</div><div class="logo-sub">VPN Control</div></div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-label">Overview</div>
+    <div class="nav-item active" onclick="switchView('dashboard',this)">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+      Dashboard
+    </div>
+
+    <div class="nav-item" id="nav-users" onclick="switchView('users',this)" style="display:none">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="5" r="3"/><path d="M1 14c0-3 2-5 5-5s5 2 5 5"/><path d="M13 7v4M11 9h4"/></svg>
+      Users
+    </div>
+    <div class="nav-item" id="nav-backup" onclick="switchView('backup',this)" style="display:none">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 10v3H3v-3"/><path d="M8 2v7M5 6l3 3 3-3"/></svg>
+      Backup / Restore
+    </div>
+
+    <!-- Interface-specific nav (hidden on dashboard) -->
+    <div id="iface-nav" style="display:none"></div>
+
+    <!-- Interface list -->
+    <div class="iface-section">
+      <div class="nav-label">Interfaces</div>
+      <div id="iface-list"></div>
+      <div class="iface-add-btn" onclick="openCreateInterface()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" width="13" height="13"><path d="M8 2v12M2 8h12"/></svg>
+        New interface
+      </div>
+    </div>
+  </nav>
+</aside>
+
+<!-- ── Main ── -->
+<div class="main">
+  <div class="fwd-banner" id="fwd-banner">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1l7 13H1z"/><path d="M8 6v4M8 11.5v.5"/></svg>
+    <span class="fwd-banner-msg">IPv4 forwarding is <strong>disabled</strong> — peer traffic will not be routed until it is enabled.</span>
+    <button class="btn btn-fix" onclick="enableIpForwarding()">Enable now</button>
+    <button class="btn btn-ghost btn-xs" onclick="document.getElementById('fwd-banner').style.display='none'" style="color:var(--text3)">✕</button>
+  </div>
+  <div class="topbar">
+    <div class="topbar-title" id="topbar-title">Dashboard</div>
+    <svg id="refresh-spinner" onclick="refresh()" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14" style="cursor:pointer;color:var(--text3);flex-shrink:0;transition:color .15s" title="Refresh" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--text3)'"><path d="M13.5 2.5A7 7 0 1 1 2.5 8"/><path d="M13.5 2.5V6h-3.5"/></svg>
+    <div class="topbar-iface" id="topbar-iface"></div>
+    <!-- User badge -->
+    <div class="user-badge" id="user-badge" onclick="toggleUserMenu()" style="display:none">
+      <div class="user-avatar" id="user-avatar">?</div>
+      <div class="user-name-txt" id="user-name-txt"></div>
+      <div class="role-pill" id="user-role-pill"></div>
+      <div class="user-menu" id="user-menu">
+  <div class="user-menu-header">
+    <div style="font-weight:700;color:#fff;font-size:12.5px" id="um-username"></div>
+    <div style="font-size:10px;color:var(--text2);margin-top:2px" id="um-role"></div>
+  </div>
+  <div class="user-menu-item" onclick="openChangePassword()">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>
+    Change Password
+  </div>
+  <div class="user-menu-item" id="um-manage-users" onclick="switchView('users', null); closeUserMenu()" style="display:none">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="5" r="3"/><path d="M1 14c0-3 2-5 5-5s5 2 5 5"/><path d="M13 7v4M11 9h4"/></svg>
+    Manage Users
+  </div>
+  <div class="user-menu-item danger" onclick="doLogout()">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M11 11l3-3-3-3M14 8H6"/></svg>
+    Sign Out
+  </div>
+</div>
+    </div>
+
+    <!-- System stats -->
+    <div class="sys-stats" id="sys-stats" title="Click for details" onclick="showSysDetails()" style="cursor:pointer">
+      <div class="sys-stat">
+        <div class="sys-stat-label">CPU</div>
+        <div class="sys-bar-wrap"><div class="sys-bar cpu" id="sys-cpu-bar" style="width:0%"></div></div>
+        <div class="sys-stat-val" id="sys-cpu-val">—</div>
+      </div>
+      <div class="sys-divider"></div>
+      <div class="sys-stat">
+        <div class="sys-stat-label">MEM</div>
+        <div class="sys-bar-wrap"><div class="sys-bar mem" id="sys-mem-bar" style="width:0%"></div></div>
+        <div class="sys-stat-val" id="sys-mem-val">—</div>
+      </div>
+      <div class="sys-divider"></div>
+      <div class="sys-uptime" id="sys-uptime">up —</div>
+    </div>
+
+    <button class="btn btn-primary btn-sm" id="topbar-add" onclick="openAddPeer()" style="display:none">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v12M2 8h12"/></svg>
+      Add Peer
+    </button>
+  </div>
+
+  <!-- Interface tab bar — shown only when interface is selected -->
+  <div id="iface-tabbar" style="display:none">
+    <button class="iface-tab" id="tab-traffic"   onclick="switchView('traffic',this)">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="13" height="13"><polyline points="1,12 5,6 8,9 11,4 15,7"/></svg>
+      Traffic
+    </button>
+    <button class="iface-tab" id="tab-peers"     onclick="switchView('peers',this)">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="13" height="13"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.5-5 6-5s6 2 6 5"/></svg>
+      Peers
+    </button>
+    <button class="iface-tab" id="tab-rules"     onclick="switchView('rules',this)">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="13" height="13"><path d="M1 3h14M1 8h9M1 13h5"/><circle cx="13" cy="11" r="3"/><path d="M12 11h2M13 10v2"/></svg>
+      Firewall Rules
+    </button>
+    <button class="iface-tab" id="tab-interface" onclick="switchView('interface',this)">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="13" height="13"><circle cx="8" cy="8" r="6"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2"/></svg>
+      Interface Config
+    </button>
+  </div>
+
+  <div class="content">
+
+    <!-- ── Dashboard ── -->
+    <div class="view active" id="view-dashboard">
+      <div class="stats-grid" id="dash-global-stats">
+        <div class="stat-card"><div class="stat-label">Total Interfaces</div><div class="stat-value" id="st-total-ifaces">—</div><div class="stat-sub" id="st-up-ifaces">— up</div></div>
+        <div class="stat-card blue"><div class="stat-label">Total Peers</div><div class="stat-value" id="st-total-peers">—</div><div class="stat-sub" id="st-online-peers">— online</div></div>
+        <div class="stat-card yellow"><div class="stat-label">Total ↓ Received</div><div class="stat-value" id="st-total-rx" style="font-size:20px;padding-top:4px">—</div><div class="stat-sub">all interfaces</div></div>
+        <div class="stat-card red"><div class="stat-label">Total ↑ Sent</div><div class="stat-value" id="st-total-tx" style="font-size:20px;padding-top:4px">—</div><div class="stat-sub">all interfaces</div></div>
+      </div>
+      <div class="section-header">
+        <div class="section-title">Interfaces</div>
+        <div class="section-sep"></div>
+        <button class="btn btn-primary btn-sm" onclick="openCreateInterface()">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v12M2 8h12"/></svg>
+          New Interface
+        </button>
+      </div>
+      <div class="iface-cards-grid" id="iface-cards">
+        <div style="grid-column:1/-1"><div class="empty-state" style="padding:28px"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
+    <!-- ── Peers ── -->
+    <div class="view" id="view-peers">
+      <div class="section-header">
+        <div class="section-title">Peers</div>
+        <div class="section-count" id="peers-count">0</div>
+        <div class="section-sep"></div>
+        <button class="btn btn-primary btn-sm" onclick="openAddPeer()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v12M2 8h12"/></svg>Add Peer</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name / Key</th><th>Enabled</th><th>Status</th><th>IP</th><th>Transfer</th><th>Firewall</th><th>Key</th><th>Actions</th></tr></thead>
+          <tbody id="peers-tbody"><tr><td colspan="7"><div class="empty-state" style="padding:28px"><div class="spinner"></div></div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Firewall Rules ── -->
+    <div class="view" id="view-rules">
+      <div class="section-header">
+        <div class="section-title">Firewall Rules</div>
+        <div class="section-sep"></div>
+        <span style="font-size:11px;color:var(--text2)">Stored in <code style="color:var(--blue)" id="rules-meta-path"></code></span>
+      </div>
+      <div style="padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);border-left:3px solid var(--yellow);margin-bottom:14px">
+        <div style="font-size:11px;color:var(--yellow);font-weight:700;margin-bottom:3px">ℹ How it works</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.6">Rules compile to <strong>PostUp/PostDown</strong> iptables commands. Click <strong>Edit Rules</strong> on a peer to open the visual rule builder.</div>
+      </div>
+      <div id="rules-overview"></div>
+    </div>
+
+    <!-- ── Interface Config ── -->
+    <div class="view" id="view-interface">
+      <div class="section-header">
+        <div class="section-title">Interface Configuration</div>
+        <div class="section-sep"></div>
+        <button class="btn btn-danger btn-sm" onclick="openDeleteInterface()" id="btn-delete-iface">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="11" height="11"><path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 10h8l1-10"/></svg>
+          Delete
+        </button>
+        <div id="iface-power-toggle" onclick="toggleActiveInterface()" title="Toggle interface" style="cursor:pointer;display:inline-flex;align-items:center;gap:7px;align-self:center;margin:0 4px">
+          <div class="toggle" id="iface-toggle-switch">
+            <input type="checkbox" id="iface-toggle-cb" style="pointer-events:none;position:absolute;opacity:0"/>
+            <div class="toggle-track"></div>
+            <div class="toggle-knob"></div>
+          </div>
+          <span id="btn-iface-toggle-txt" style="font-size:11px;color:var(--text2)"></span>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="restartActiveInterface()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.5 2.5A7 7 0 1 1 2.5 8"/><path d="M13.5 2.5V6h-3.5"/></svg>Restart</button>
+        <button class="btn btn-ghost btn-sm" id="btn-export-peers" onclick="exportPeers()" style="display:none">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8h10M9 4l4 4-4 4"/><path d="M1 2v12"/></svg>
+          Export Peers
+        </button>
+        <button class="btn btn-danger btn-sm" id="btn-repair-iface" onclick="openRepairInterface()" style="display:none">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8h12M8 2v12"/></svg>
+          Fix Config
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="openEditInterface()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2l3 3-8 8H3v-3L11 2z"/></svg>Edit</button>
+      </div>
+      <div class="iface-grid">
+        <div class="iface-card"><div class="iface-card-title">General</div><div id="iface-general"></div></div>
+        <div class="iface-card"><div class="iface-card-title">Routing / Firewall</div><div id="iface-firewall"></div></div>
+      </div>
+    </div>
+
+    <!-- ── Traffic ── -->
+    <div class="view" id="view-traffic">
+      <div class="section-header">
+        <div class="section-title" id="traffic-title">Traffic</div>
+        <div class="section-sep"></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="font-size:11px;color:var(--text2);text-transform:none;letter-spacing:0">Window:</label>
+          <select id="traffic-window" onchange="onTrafficWindowChange()" style="width:auto;padding:4px 8px;font-size:11px">
+            <option value="30">30 min</option>
+            <option value="60" selected>1 hour</option>
+            <option value="360">6 hours</option>
+            <option value="1440">24 hours</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Stats cards -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px" id="traffic-stats-grid">
+        <div class="stat-card"><div class="stat-label">Live ↓</div><div class="stat-value" id="tst-rx-live" style="font-size:20px;padding-top:4px">—</div><div class="stat-sub">current download</div></div>
+        <div class="stat-card red"><div class="stat-label">Live ↑</div><div class="stat-value" id="tst-tx-live" style="font-size:20px;padding-top:4px">—</div><div class="stat-sub">current upload</div></div>
+        <div class="stat-card yellow"><div class="stat-label">24h Avg ↓ / ↑</div><div class="stat-value" id="tst-avg" style="font-size:14px;padding-top:6px">—</div><div class="stat-sub" id="tst-avg-sub">24h average</div></div>
+        <div class="stat-card blue"><div class="stat-label">24h Peak ↓ / ↑</div><div class="stat-value" id="tst-peak" style="font-size:14px;padding-top:6px">—</div><div class="stat-sub" id="tst-peak-sub">24h maximum</div></div>
+      </div>
+
+      <!-- Chart -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+          <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text2);font-family:var(--font-ui);font-weight:700">Throughput</div>
+          <div style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--green)">
+            <div style="width:20px;height:2px;background:var(--green);border-radius:1px"></div>Download
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--yellow)">
+            <div style="width:20px;height:2px;background:var(--yellow);border-radius:1px"></div>Upload
+          </div>
+          <div style="margin-left:auto;font-size:10px;color:var(--text3)" id="traffic-sample-count"></div>
+        </div>
+        <canvas id="traffic-canvas" style="width:100%;height:200px;display:block"></canvas>
+        <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--text3);margin-top:6px">
+          <span id="traffic-x-start"></span>
+          <span id="traffic-x-end">now</span>
+        </div>
+      </div>
+
+      <div style="font-size:10px;color:var(--text3);margin-top:10px;text-align:center">
+        Samples collected every 10 seconds. Data retained for 25 hours.
+      </div>
+    </div>
+
+    <!-- ── Backup / Restore ── -->
+    <div class="view" id="view-backup">
+      <div class="section-header">
+        <div class="section-title">Backup & Restore</div>
+        <div class="section-sep"></div>
+        <button class="btn btn-primary btn-sm" onclick="doBackup()" id="btn-backup">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 10v3H3v-3"/><path d="M8 2v7M5 6l3 3 3-3"/></svg>
+          Download Backup
+        </button>
+      </div>
+
+      <!-- What will be backed up -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px" id="backup-manifest-grid">
+        <div class="iface-card"><div class="iface-card-title">Loading…</div></div>
+      </div>
+
+      <!-- Restore section -->
+      <div class="section-header" style="margin-top:8px">
+        <div class="section-title">Restore from Backup</div>
+        <div class="section-sep"></div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px">
+        <div style="padding:10px 14px;background:var(--red-bg);border:1px solid rgba(255,77,106,.2);border-radius:var(--radius);border-left:3px solid var(--red);margin-bottom:16px">
+          <div style="font-size:11px;color:var(--red);font-weight:700;margin-bottom:3px">⚠ Warning</div>
+          <div style="font-size:11px;color:var(--text2);line-height:1.6">Restore will overwrite existing files. WireGuard interfaces will be brought down briefly during restore. Current user session will be invalidated if users database is restored.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text)">
+            <input type="checkbox" id="restore-wg" checked style="width:auto;accent-color:var(--green)"/>
+            WireGuard configs
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text)">
+            <input type="checkbox" id="restore-meta" checked style="width:auto;accent-color:var(--green)"/>
+            Firewall rules / metadata
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text)">
+            <input type="checkbox" id="restore-users" checked style="width:auto;accent-color:var(--green)"/>
+            Users database
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text)">
+            <input type="checkbox" id="restore-secret" checked style="width:auto;accent-color:var(--green)"/>
+            JWT secret <span style="font-size:10px;color:var(--text3)">(needed for peer private keys)</span>
+          </label>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-end">
+          <div style="flex:1">
+            <label style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text2);margin-bottom:5px;display:block">Backup File (.zip)</label>
+            <input type="file" id="restore-file" accept=".zip" style="padding:6px 10px;cursor:pointer"/>
+          </div>
+          <button class="btn btn-danger" onclick="doRestore()" id="btn-restore">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6v-3h10v3"/><path d="M8 14V7M5 10l3-3 3 3"/></svg>
+            Restore
+          </button>
+        </div>
+        <div id="restore-result" style="display:none;margin-top:14px;padding:10px 14px;border-radius:var(--radius);font-size:11.5px;line-height:1.7"></div>
+      </div>
+    </div>
+
+    <!-- ── Users ── -->
+    <div class="view" id="view-users">
+      <div class="section-header">
+        <div class="section-title">User Management</div>
+        <div class="section-count" id="users-count">0</div>
+        <div class="section-sep"></div>
+        <button class="btn btn-primary btn-sm" onclick="openCreateUser()">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v12M2 8h12"/></svg>
+          New User
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>Username</th><th>Role</th><th>Created</th><th>Last Login</th><th>Actions</th></tr></thead>
+          <tbody id="users-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<!-- Sys details popover -->
+<div id="sys-popover" style="display:none;position:fixed;top:62px;right:180px;z-index:200;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:14px 16px;min-width:200px;box-shadow:0 8px 32px rgba(0,0,0,.5);font-size:11px">
+  <div style="font-family:var(--font-ui);font-weight:700;color:#fff;margin-bottom:10px;font-size:12px">System Status</div>
+  <div id="sys-popover-body"></div>
+  <div style="margin-top:10px;font-size:9.5px;color:var(--text3);text-align:right">Click anywhere to close</div>
+</div>
+
+<!-- ═══ Modal: Create Interface ═══ -->
+<div class="modal-bg" id="modal-create-iface">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">New WireGuard Interface</div><button class="modal-close" onclick="closeModal('modal-create-iface')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-section">Basic</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Interface Name <span class="hint">must be wgN</span></label>
+          <input id="ci-name" placeholder="e.g. wg1" list="ci-name-list"/>
+          <datalist id="ci-name-list"></datalist>
+        </div>
+        <div class="form-group"><label>Address / Subnet</label><input id="ci-addr" placeholder="e.g. 10.1.0.1/24"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Alias <span class="hint">display name</span></label><input id="ci-alias" placeholder="e.g. Office VPN"/></div>
+        <div class="form-group"><label>Listen Port</label><input id="ci-port" placeholder="e.g. 51821"/></div>
+        <div class="form-group"><label>External Port <span class="hint">if NAT/port forward differs</span></label><input id="ci-extport" placeholder="leave empty if same"/></div>
+
+      </div>
+      <div class="form-section" style="margin-top:4px">Global Firewall</div>
+      <div class="form-group"><label>PostUp</label><textarea id="ci-postup" rows="2" placeholder="iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE"></textarea></div>
+      <div class="form-group"><label>PostDown</label><textarea id="ci-postdown" rows="2" placeholder="iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE"></textarea></div>
+      <div style="font-size:10px;color:var(--text2);background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-top:4px">
+        Private/public keypair will be auto-generated. The public key will be shown after creation.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-create-iface')">Cancel</button>
+      <button class="btn btn-primary" onclick="createInterface()" id="btn-create-iface">Create Interface</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Modal: Add/Edit Peer ═══ -->
+<div class="modal-bg" id="modal-peer">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title" id="modal-peer-title">Add Peer</div><button class="modal-close" onclick="closeModal('modal-peer')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-section">Identity</div>
+      <div class="form-row">
+        <div class="form-group"><label>Name</label><input id="f-name" placeholder="e.g. laptop-alice"/></div>
+        <div class="form-group"><label>Allowed IPs</label><input id="f-ips" placeholder="auto-assigned"/></div>
+      </div>
+      <div class="form-group">
+        <label>Public Key <span class="hint">leave empty to auto-generate</span></label>
+        <div class="input-row"><input id="f-pubkey" placeholder="auto-generate"/><button class="btn btn-ghost btn-sm" onclick="generateKeys()">Generate</button></div>
+      </div>
+      <div class="form-group"><label>Private Key <span class="hint">generated — save this!</span></label><input id="f-privkey" placeholder="(will be generated)" readonly style="color:var(--yellow)"/></div>
+      <div class="form-section" style="margin-top:4px">Options</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Preshared Key</label>
+          <div class="input-row"><input id="f-psk" placeholder="optional"/><button class="btn btn-ghost btn-sm" onclick="generatePsk()">Gen</button></div>
+        </div>
+        <div class="form-group"><label>Keepalive <span class="hint">sec</span></label><input id="f-ka" placeholder="25"/></div>
+      </div>
+      <div class="form-group"><label>DNS</label><input id="f-dns" placeholder="e.g. 1.1.1.1"/></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-peer')">Cancel</button>
+      <button class="btn btn-primary" onclick="savePeer()" id="btn-save-peer">Save Peer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Modal: Client Config Builder ═══ -->
+<div class="modal-bg" id="modal-conf">
+  <div class="modal" style="width:680px">
+    <div class="modal-header">
+      <div class="modal-title">Client Configuration</div>
+      <button class="modal-close" onclick="closeModal('modal-conf')">✕</button>
+    </div>
+    <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:0;padding:0;overflow:hidden">
+
+      <!-- Left: options -->
+      <div style="padding:18px;border-right:1px solid var(--border);overflow-y:auto">
+        <div style="font-size:11px;color:var(--yellow);background:var(--red-bg);border:1px solid rgba(255,209,102,.2);border-radius:var(--radius);padding:8px 11px;margin-bottom:16px">
+          ⚠ Save the private key now — it won't be shown again!
+        </div>
+
+        <div class="form-section">Platform</div>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <div class="platform-pill active" id="plt-windows" onclick="selectPlatform('windows')">
+            <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14"><path d="M0 2.5L6.5 1.6V8H0V2.5ZM7.5 1.4L16 0V8H7.5V1.4ZM0 9H6.5V15.4L0 14.5V9ZM7.5 9H16V16L7.5 14.6V9Z"/></svg>
+            Windows
+          </div>
+          <div class="platform-pill" id="plt-linux" onclick="selectPlatform('linux')">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" width="14" height="14"><circle cx="8" cy="8" r="7"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg>
+            Linux / macOS
+          </div>
+          <div class="platform-pill" id="plt-other" onclick="selectPlatform('other')">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M4 7h8M4 10h5"/></svg>
+            Other
+          </div>
+        </div>
+
+        <!-- Windows PS warning — shown only for windows platform -->
+        <div id="conf-win-warning" style="display:none;padding:10px 12px;background:var(--yellow-bg);border:1px solid rgba(255,209,102,.25);border-radius:var(--radius);border-left:3px solid var(--yellow);margin-bottom:14px;font-size:11px;line-height:1.7">
+          <div style="font-weight:700;color:var(--yellow);margin-bottom:5px">⚠ WireGuard Windows — PowerShell ExecutionPolicy</div>
+          <div style="color:var(--text2)">
+            PostUp/PreDown PowerShell skripte zahtevaju da WireGuard ima dozvolu za pokretanje skripti.<br/>
+            Pokrenite u <strong style="color:var(--text)">PowerShell (Administrator)</strong>:
+          </div>
+          <div style="margin:7px 0;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:7px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--green);position:relative">
+            Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned
+            <button onclick="navigator.clipboard.writeText('Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned').then(()=>toast('Copied!','success'))" style="position:absolute;right:6px;top:5px;background:var(--bg2);border:1px solid var(--border2);border-radius:3px;color:var(--text2);cursor:pointer;font-size:9.5px;padding:2px 7px;font-family:var(--font-mono)">Copy</button>
+          </div>
+          <div style="color:var(--text2)">
+            Ili ako koristite WireGuard sa <strong style="color:var(--text)">SYSTEM nalogom</strong> (servis):
+          </div>
+          <div style="margin:7px 0;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:7px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--green);position:relative">
+            Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy Unrestricted
+            <button onclick="navigator.clipboard.writeText('Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy Unrestricted').then(()=>toast('Copied!','success'))" style="position:absolute;right:6px;top:5px;background:var(--bg2);border:1px solid var(--border2);border-radius:3px;color:var(--text2);cursor:pointer;font-size:9.5px;padding:2px 7px;font-family:var(--font-mono)">Copy</button>
+          </div>
+          <div style="color:var(--text3);font-size:10px;margin-top:4px">
+            Podešavanje se primenjuje jednom per mašina. Nakon toga WireGuard može da izvršava PostUp/PreDown skripte.
+          </div>
+        </div>
+
+        <div id="conf-qr-section" style="display:none;flex-direction:column;align-items:center;gap:12px;padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px">
+          <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text2);font-family:var(--font-ui);font-weight:700">QR Code</div>
+          <div id="conf-qr-canvas" style="background:#fff;padding:10px;border-radius:6px"></div>
+          <div style="font-size:10px;color:var(--text3);text-align:center;line-height:1.5">Skenirajte WireGuard aplikacijom<br>na mobilnom uređaju</div>
+        </div>
+
+        <div id="conf-routing-section">
+        <div class="form-section">Routing</div>
+        <div style="margin-bottom:12px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin-bottom:8px">
+            <input type="checkbox" id="conf-default-route" style="width:auto;accent-color:var(--green)" onchange="rebuildConf()"/>
+            Add default route (0.0.0.0/0) with metric 9999
+          </label>
+          <div style="font-size:9.5px;color:var(--text3);padding-left:22px;line-height:1.5">
+            Routes all internet traffic through the tunnel. Recommended for full-tunnel setups.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Split-tunnel routes <span class="hint">one per line, CIDR</span></label>
+          <textarea id="conf-routes" rows="6" placeholder="192.168.0.0/24&#10;192.168.4.0/24&#10;192.168.11.0/24" oninput="rebuildConf()" style="font-size:11.5px;line-height:1.6"></textarea>
+          <div style="font-size:9.5px;color:var(--text3);margin-top:4px">These subnets will be routed through the WireGuard tunnel on the client machine.</div>
+        </div>
+
+        <div class="form-group">
+          <label>DNS override <span class="hint">optional</span></label>
+          <input id="conf-dns-override" placeholder="leave empty to use peer DNS" oninput="rebuildConf()"/>
+        </div>
+        </div><!-- /conf-routing-section -->
+      </div>
+
+      <!-- Right: live preview -->
+      <div style="padding:18px;display:flex;flex-direction:column;gap:10px;background:var(--bg);overflow-y:auto">
+        <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text2);font-family:var(--font-ui);font-weight:700">Generated Config</div>
+        <div style="position:relative;flex:1">
+          <pre class="config-box" id="client-conf-box" style="min-height:300px;font-size:10.5px;background:var(--bg2)"></pre>
+          <button class="copy-btn" onclick="copyConf()">Copy</button>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-conf')">Close</button>
+      <button class="btn btn-primary" onclick="downloadConf()">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v9M4 8l4 4 4-4M2 14h12"/></svg>
+        Download .conf
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Modal: Delete Peer ═══ -->
+<div class="modal-bg" id="modal-delete">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header"><div class="modal-title" style="color:var(--red)">Remove Peer</div><button class="modal-close" onclick="closeModal('modal-delete')">✕</button></div>
+    <div class="modal-body"><p style="font-size:13px;line-height:1.7">Remove peer <strong id="del-name" style="color:var(--red)"></strong>?</p></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-delete')">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDelete()">Remove</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Modal: Delete Interface ═══ -->
+<div class="modal-bg" id="modal-delete-iface">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header"><div class="modal-title" style="color:var(--red)">Delete Interface</div><button class="modal-close" onclick="closeModal('modal-delete-iface')">✕</button></div>
+    <div class="modal-body">
+      <p style="font-size:13px;line-height:1.8">This will bring down <strong id="del-iface-name" style="color:var(--red)"></strong>, delete its <code>.conf</code> file and metadata. All peers will be lost.</p>
+      <div style="margin-top:12px;font-size:12px;color:var(--yellow)">⚠ This cannot be undone.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-delete-iface')">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDeleteInterface()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Modal: Repair Interface ═══ -->
+<div class="modal-bg" id="modal-repair-iface">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <div class="modal-title" style="color:var(--yellow)">Fix Interface Configuration</div>
+      <button class="modal-close" onclick="closeModal('modal-repair-iface')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="padding:10px 12px;background:var(--yellow-bg);border:1px solid rgba(255,209,102,.25);border-radius:var(--radius);border-left:3px solid var(--yellow);margin-bottom:16px;font-size:11px;color:var(--text2);line-height:1.7">
+        Enter the existing interface parameters. If you paste the existing PrivateKey, all peers will continue to work.
+        <br/><strong style="color:var(--red)">Generating a new PrivateKey will break all existing peer connections.</strong>
+      </div>
+      <div class="form-group">
+        <label>Private Key <span class="hint">paste existing key — do NOT generate new unless you know what you're doing</span></label>
+        <div class="input-row">
+          <input id="repair-privkey" placeholder="paste existing PrivateKey from backup or wg genkey"/>
+          <button class="btn btn-danger btn-sm" onclick="confirmGenerateNewKey()" title="WARNING: breaks all peers">New Key</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Address</label><input id="repair-address" placeholder="e.g. 10.0.0.1/24"/></div>
+        <div class="form-group"><label>Listen Port</label><input id="repair-port" placeholder="e.g. 51820"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>DNS <span class="hint">optional</span></label><input id="repair-dns" placeholder="optional"/></div>
+        <div class="form-group"><label>MTU <span class="hint">optional</span></label><input id="repair-mtu" placeholder="1420"/></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-repair-iface')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveRepairInterface()">Apply & Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Modal: Edit Interface ═══ -->
+<div class="modal-bg" id="modal-iface">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title" id="modal-iface-title">Edit Interface</div><button class="modal-close" onclick="closeModal('modal-iface')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>Alias <span class="hint">display name</span></label><input id="if-alias" placeholder="e.g. Office VPN"/></div>
+        <div class="form-group"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Address</label><input id="if-addr" placeholder="10.0.0.1/24"/></div>
+        <div class="form-group"><label>Listen Port</label><input id="if-port" placeholder="51820"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>External Port <span class="hint">if NAT/port forward differs</span></label><input id="if-extport" placeholder="leave empty if same as listen port"/></div>
+        <div class="form-group"></div>
+      </div>
+      <div class="form-row">
+
+        <div class="form-group"><label>MTU</label><input id="if-mtu" placeholder="1420"/></div>
+      </div>
+      <div class="form-section" style="margin-top:4px">Global Firewall</div>
+      <div class="form-group"><label>PostUp</label><textarea id="if-postup" rows="3"></textarea></div>
+      <div class="form-group"><label>PostDown</label><textarea id="if-postdown" rows="3"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-iface')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveInterface()">Save & Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Modal: iptables Rule Builder ═══ -->
+<div class="modal-bg" id="modal-rules">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title"><span id="rules-modal-title-prefix">Edit Rules —</span> <span id="rules-peer-name" style="color:var(--blue)"></span></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-rules')">✕</button>
+    </div>
+    <div style="padding:10px 18px;border-bottom:1px solid var(--border)" id="rules-allowed-ips-row">
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--text2);white-space:nowrap;font-family:var(--font-ui);font-weight:700">Allowed IPs / Routes</label>
+        <input id="rules-peer-allowed-ips" class="inp" style="flex:1;font-size:11.5px;font-family:var(--font-mono)"
+          placeholder="e.g. 192.168.10.0/24, 10.10.0.0/16"
+          title="Networks behind this peer — written to AllowedIPs in wg.conf. Comma-separated." />
+        <span style="font-size:9px;color:var(--text3);white-space:nowrap">→ wg.conf</span>
+      </div>
+    </div>
+    <div class="modal-body" style="padding:0;overflow:hidden">
+      <div class="ipt-layout">
+        <div class="ipt-left" id="rules-edit-controls">
+          <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text2);font-family:var(--font-ui);font-weight:700">Rule Type</div>
+          <div class="rule-type-grid" id="rule-type-grid">
+            <div class="rtb selected" data-type="port" onclick="selectRuleType('port',this)"><div class="rtb-icon">🔌</div><div class="rtb-label">Port / Protocol</div><div class="rtb-desc">Allow or block ports</div></div>
+            <div class="rtb" data-type="destination" onclick="selectRuleType('destination',this)"><div class="rtb-icon">🎯</div><div class="rtb-label">Destination</div><div class="rtb-desc">Control access to subnet/IP</div></div>
+            <div class="rtb" data-type="internet" onclick="selectRuleType('internet',this)"><div class="rtb-icon">🌐</div><div class="rtb-label">Internet Access</div><div class="rtb-desc">Allow or block all forwarding</div></div>
+            <div class="rtb" data-type="ratelimit" onclick="selectRuleType('ratelimit',this)"><div class="rtb-icon">⏱</div><div class="rtb-label">Rate Limit</div><div class="rtb-desc">Bandwidth cap via hashlimit</div></div>
+            <div class="rtb" data-type="nomasq" onclick="selectRuleType('nomasq',this)"><div class="rtb-icon">🔀</div><div class="rtb-label">No MASQUERADE</div><div class="rtb-desc">Preserve source IP for static routing</div></div>
+          </div>
+          <div class="rule-form-box" id="rule-form-box"></div>
+          <button class="btn btn-primary btn-sm" style="width:100%" onclick="addRuleToList()">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v12M2 8h12"/></svg>
+            Add Rule
+          </button>
+        </div>
+        <div class="ipt-right">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text2);font-family:var(--font-ui);font-weight:700;flex:1">Applied Rules</div>
+            <span class="section-count" id="rules-count-badge">0</span>
+          </div>
+          <div class="rules-list-wrap" id="rules-list-wrap">
+            <div style="font-size:11px;color:var(--text3);text-align:center;padding:22px">No rules — add them on the left</div>
+          </div>
+          <div>
+            <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text2);margin-bottom:6px;font-family:var(--font-ui);font-weight:700">Generated Commands</div>
+            <div style="font-size:9px;color:var(--text3);margin-bottom:5px"><span style="color:var(--green)">■</span> PostUp &nbsp;<span style="color:var(--red)">■</span> PostDown</div>
+            <div class="cmd-preview" id="cmd-preview"><span class="cmd-empty">No rules configured</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" id="rules-modal-clear-btn" onclick="clearAllRules()" style="margin-right:auto;color:var(--text3)">Clear All</button>
+      <span id="rules-modal-readonly-notice" style="display:none;margin-right:auto;font-size:11px;color:var(--text3)">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="12" height="12" style="vertical-align:middle;margin-right:4px"><rect x="3" y="7" width="10" height="7" rx="1"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>
+        Read-only — viewing rules only
+      </span>
+      <button class="btn btn-ghost" onclick="closeModal('modal-rules')">Close</button>
+      <button class="btn btn-primary" id="rules-modal-save-btn" onclick="saveRules()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 9l4 4 8-8"/></svg>Save Rules</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Login overlay ═══ -->
+
+
+<!-- ═══ User menu ═══ -->
+
+<!-- ═══ Modal: Change Password ═══ -->
+<div class="modal-bg" id="modal-chpw">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header"><div class="modal-title">Change Password</div><button class="modal-close" onclick="closeModal('modal-chpw')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Current Password</label><input id="chpw-old" type="password" placeholder="••••••••"/></div>
+      <div class="form-group"><label>New Password <span class="hint">min 8 chars</span></label><input id="chpw-new" type="password" placeholder="••••••••"/></div>
+      <div class="form-group"><label>Confirm New Password</label><input id="chpw-confirm" type="password" placeholder="••••••••"/></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-chpw')">Cancel</button>
+      <button class="btn btn-primary" onclick="changePassword()">Change Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Modal: Create/Edit User ═══ -->
+<div class="modal-bg" id="modal-user">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header"><div class="modal-title" id="modal-user-title">New User</div><button class="modal-close" onclick="closeModal('modal-user')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Username</label><input id="u-username" placeholder="e.g. john"/></div>
+      <div class="form-group" id="u-pw-group">
+        <label>Password <span class="hint" id="u-pw-hint">min 8 chars</span></label>
+        <input id="u-password" type="password" placeholder="••••••••"/>
+      </div>
+      <div class="form-group" id="u-pw-confirm-group">
+        <label>Confirm Password</label>
+        <input id="u-password-confirm" type="password" placeholder="••••••••"/>
+      </div>
+      <div class="form-group">
+        <label>Role</label>
+        <select id="u-role">
+          <option value="readonly">Read-only — view only</option>
+          <option value="operator">Operator — manage peers</option>
+          <option value="admin">Admin — full access</option>
+        </select>
+      </div>
+      <div style="font-size:10.5px;color:var(--text2);background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;line-height:1.7">
+        <strong style="color:#fff">Admin</strong> — full access including interfaces and user management<br/>
+        <strong style="color:var(--blue)">Operator</strong> — can add/edit/delete peers and firewall rules<br/>
+        <strong style="color:var(--text3)">Read-only</strong> — view everything, change nothing
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-user')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveUser()" id="btn-save-user">Create User</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Modal: Delete User confirm ═══ -->
+<div class="modal-bg" id="modal-del-user">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-header"><div class="modal-title" style="color:var(--red)">Delete User</div><button class="modal-close" onclick="closeModal('modal-del-user')">✕</button></div>
+    <div class="modal-body"><p style="font-size:13px;line-height:1.7">Delete user <strong id="del-user-name" style="color:var(--red)"></strong>? This cannot be undone.</p></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-del-user')">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDeleteUser()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══ State ═══
+const API = '';
+let currentUser     = null;  // {username, role}
+let allInterfaces   = [];   // [{name, up, address, listen_port, total_peers, online_peers, rx_bytes, tx_bytes}]
+let activeIface     = null; // currently selected interface name
+let ifacePeerState  = {};   // {ifaceName: {peers, interfaceUp, ...}}
+let wanInterface    = 'eth0';
+let serverPublicIp  = '';
+
+// peer modal
+let editingPeerKey  = null;
+let deletingPeerKey = null;
+let clientConfData  = '';
+let clientConfName  = 'client';
+
+// rules modal
+let rulesPeerKey        = null;
+let rulesPeerIp         = '';
+let rulesPeerAllowedIps = '';
+let currentRules        = [];
+let currentRuleType     = 'port';
+let currentAction       = 'ACCEPT';
+
+// ═══ Init ═══
+// ════════════════════════════════
+// Auth
+// ════════════════════════════════
+
+async function checkAuth() {
+  if (sessionStorage.getItem('logged_out') === '1') {
+    showLogin();
+    return;
+  }
+  try {
+    const me = await apiFetch('/api/auth/me');
+    currentUser = me;
+    onAuthSuccess(me);
+    startApp();
+  } catch(e) {
+    showLogin();
+  }
+}
+
+function showLogin() {
+  document.getElementById('login-wrap').style.display = 'flex';
+  document.getElementById('net-canvas').style.display = 'block';
+  startNetCanvas();
+  document.getElementById('login-user').focus();
+}
+
+function hideLogin() {
+  document.getElementById('login-wrap').style.display = 'none';
+  stopNetCanvas();
+  document.getElementById('net-canvas').style.display = 'none';
+}
+
+function onAuthSuccess(user) {
+  hideLogin();
+  currentUser = user;
+  // Update user badge
+  const badge = document.getElementById('user-badge');
+  const avatar = document.getElementById('user-avatar');
+  badge.style.display = 'flex';
+  document.getElementById('user-name-txt').textContent = user.username;
+  const rp = document.getElementById('user-role-pill');
+  rp.textContent = user.role;
+  rp.className = `role-pill ${user.role}`;
+  avatar.textContent = user.username[0].toUpperCase();
+  avatar.className = `user-avatar ${user.role==='operator'?'op':user.role==='readonly'?'ro':''}`;
+  // User menu
+  document.getElementById('um-username').textContent = user.username;
+  document.getElementById('um-role').textContent = {admin:'Administrator',operator:'Operator',readonly:'Read-only'}[user.role]||user.role;
+  // Show Users nav only for admin
+  document.getElementById('nav-users').style.display  = user.role==='admin' ? '' : 'none';
+  document.getElementById('nav-backup').style.display      = user.role==='admin' ? '' : 'none';
+  const expBtn = document.getElementById('btn-export-peers');
+  if (expBtn) expBtn.style.display = user.role==='admin' ? '' : 'none';
+  document.getElementById('um-manage-users').style.display = user.role==='admin' ? '' : 'none';
+  applyRoleRestrictions();
+}
+
+function applyRoleRestrictions() {
+  if (!currentUser) return;
+  const role = currentUser.role;
+  // Hide add peer button for readonly
+  if (role === 'readonly') {
+    document.getElementById('topbar-add').style.display = 'none';
+  }
+}
+
+async function doLogin() {
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-error');
+  const user = document.getElementById('login-user').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  err.classList.remove('show');
+  if (!user || !pass) { err.textContent='Enter username and password'; err.classList.add('show'); return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const res = await apiFetch('/api/auth/login', {method:'POST', body:JSON.stringify({username:user, password:pass})});
+    sessionStorage.removeItem('logged_out');
+    onAuthSuccess(res);
+    document.getElementById('login-pass').value = '';
+    startApp();
+  } catch(e) {
+    err.textContent = e.message || 'Invalid credentials';
+    err.classList.add('show');
+    document.getElementById('login-pass').value = '';
+  } finally { btn.disabled=false; btn.textContent='Sign In'; }
+}
+
+async function doLogout() {
+  try { await apiFetch('/api/auth/logout',{method:'POST'}); } catch(e){}
+  currentUser = null;
+  closeUserMenu();
+  // Reset UI state fully before showing login
+  activeIface = null;
+  allInterfaces = [];
+  ifacePeerState = {};
+  document.getElementById('user-badge').style.display='none';
+  document.getElementById('iface-nav').style.display='none';
+  document.getElementById('topbar-iface').style.display='none';
+  document.getElementById('topbar-add').style.display='none';
+  document.getElementById('nav-users').style.display='none';
+  document.getElementById('nav-backup').style.display='none';
+  // Switch to dashboard view silently (no nav highlight needed)
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('view-dashboard').classList.add('active');
+  document.getElementById('topbar-title').textContent='Dashboard';
+  document.querySelectorAll('.nav-item')[0].classList.add('active');
+  // Clear rendered content so next user starts fresh
+  document.getElementById('iface-cards').innerHTML='';
+  document.getElementById('peers-tbody').innerHTML='';
+  document.getElementById('rules-overview').innerHTML='';
+  document.getElementById('users-tbody').innerHTML='';
+  document.getElementById('login-user').value='';
+  document.getElementById('login-pass').value='';
+  document.getElementById('login-error').classList.remove('show');
+  sessionStorage.setItem('logged_out', '1');
+  showLogin();
+}
+
+// Intercept 401 globally — if session expires, show login
+const _origApiFetch = apiFetch;
+
+function toggleUserMenu() {
+  document.getElementById('user-menu').classList.toggle('open');
+}
+function closeUserMenu() {
+  document.getElementById('user-menu').classList.remove('open');
+}
+
+function openChangePassword() {
+  closeUserMenu();
+  ['chpw-old','chpw-new','chpw-confirm'].forEach(id=>document.getElementById(id).value='');
+  openModal('modal-chpw');
+}
+
+async function changePassword() {
+  const old_pw = document.getElementById('chpw-old').value;
+  const new_pw = document.getElementById('chpw-new').value;
+  const conf   = document.getElementById('chpw-confirm').value;
+  if (new_pw !== conf) { toast('Passwords do not match','error'); return; }
+  if (new_pw.length < 8) { toast('New password must be at least 8 characters','error'); return; }
+  try {
+    await apiFetch('/api/auth/change-password',{method:'POST',body:JSON.stringify({old_password:old_pw,new_password:new_pw})});
+    toast('Password changed successfully.','success');
+    closeModal('modal-chpw');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+// ════════════════════════════════
+// User Management
+// ════════════════════════════════
+
+let editingUserId   = null;
+let deletingUserId  = null;
+
+async function loadUsers() {
+  const tbody = document.getElementById('users-tbody');
+  try {
+    const users = await apiFetch('/api/auth/users');
+    document.getElementById('users-count').textContent = users.length;
+    tbody.innerHTML = users.map(u => {
+      const avatarClass = u.role==='operator'?'op':u.role==='readonly'?'ro':'';
+      const isSelf = currentUser && u.username === currentUser.username;
+      return `<tr>
+        <td><div class="user-row-avatar ${avatarClass}" style="background:${u.role==='admin'?'var(--green-bg)':u.role==='operator'?'var(--blue-bg)':'var(--bg4)'};color:${u.role==='admin'?'var(--green)':u.role==='operator'?'var(--blue)':'var(--text3)'}">${u.username[0].toUpperCase()}</div></td>
+        <td><div style="font-weight:600;color:#fff">${esc(u.username)}${isSelf?'<span style="font-size:9px;color:var(--text3);margin-left:6px">(you)</span>':''}</div></td>
+        <td><span class="role-pill ${u.role}">${u.role}</span></td>
+        <td style="font-size:11px;color:var(--text2)">${fmtDate(u.created)}</td>
+        <td style="font-size:11px;color:var(--text2)">${u.last_login?fmtDate(u.last_login):'Never'}</td>
+        <td><div class="actions">
+          <button class="btn btn-ghost btn-xs" onclick="openEditUser(${u.id},'${esc(u.username)}','${u.role}')">Edit</button>
+          ${!isSelf?`<button class="btn btn-danger btn-xs" onclick="openDeleteUser(${u.id},'${esc(u.username)}')">✕</button>`:''}
+        </div></td>
+      </tr>`;
+    }).join('');
+  } catch(e) { toast('Failed to load users: '+e.message,'error'); }
+}
+
+function openCreateUser() {
+  editingUserId = null;
+  document.getElementById('modal-user-title').textContent = 'New User';
+  document.getElementById('btn-save-user').textContent = 'Create User';
+  document.getElementById('u-username').value = '';
+  document.getElementById('u-username').readOnly = false;
+  document.getElementById('u-password').value = '';
+  document.getElementById('u-password-confirm').value = '';
+  document.getElementById('u-pw-hint').textContent = 'min 8 chars';
+  document.getElementById('u-role').value = 'readonly';
+  document.getElementById('u-pw-confirm-group').style.display = '';
+  openModal('modal-user');
+}
+
+function openEditUser(id, username, role) {
+  editingUserId = id;
+  document.getElementById('modal-user-title').textContent = `Edit ${username}`;
+  document.getElementById('btn-save-user').textContent = 'Save Changes';
+  document.getElementById('u-username').value = username;
+  document.getElementById('u-username').readOnly = true;
+  document.getElementById('u-password').value = '';
+  document.getElementById('u-password-confirm').value = '';
+  document.getElementById('u-pw-hint').textContent = 'leave empty to keep current';
+  document.getElementById('u-role').value = role;
+  document.getElementById('u-pw-confirm-group').style.display = 'none';
+  openModal('modal-user');
+}
+
+async function saveUser() {
+  const btn = document.getElementById('btn-save-user');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    if (editingUserId) {
+      const payload = {role: document.getElementById('u-role').value};
+      const pw = document.getElementById('u-password').value;
+      if (pw) {
+        if (pw.length < 8) { toast('Password must be at least 8 characters','error'); return; }
+        payload.password = pw;
+      }
+      await apiFetch(`/api/auth/users/${editingUserId}`,{method:'PUT',body:JSON.stringify(payload)});
+      toast('User updated.','success');
+    } else {
+      const pw      = document.getElementById('u-password').value;
+      const pwConf  = document.getElementById('u-password-confirm').value;
+      const uname   = document.getElementById('u-username').value.trim();
+      if (!uname)          { toast('Username is required','error'); return; }
+      if (pw.length < 8)   { toast('Password must be at least 8 characters','error'); return; }
+      if (pw !== pwConf)   { toast('Passwords do not match','error'); return; }
+      await apiFetch('/api/auth/users',{method:'POST',body:JSON.stringify({
+        username: uname, password: pw, role: document.getElementById('u-role').value,
+      })});
+      toast('User created.','success');
+    }
+    closeModal('modal-user');
+    loadUsers();
+  } catch(e){ toast(e.message,'error'); }
+  finally{ btn.disabled=false; btn.textContent=editingUserId?'Save Changes':'Create User'; }
+}
+
+function openDeleteUser(id, username) {
+  deletingUserId = id;
+  document.getElementById('del-user-name').textContent = username;
+  openModal('modal-del-user');
+}
+
+async function confirmDeleteUser() {
+  try {
+    await apiFetch(`/api/auth/users/${deletingUserId}`,{method:'DELETE'});
+    toast('User deleted.','success');
+    closeModal('modal-del-user');
+    loadUsers();
+  } catch(e){ toast(e.message,'error'); }
+}
+
+// ════════════════════════════════
+// Backup / Restore
+// ════════════════════════════════
+
+async function loadBackupManifest() {
+  const grid = document.getElementById('backup-manifest-grid');
+  grid.innerHTML = `<div class="iface-card" style="grid-column:1/-1"><div class="iface-card-title">Loading…</div><div class="spinner"></div></div>`;
+  try {
+    const d = await apiFetch('/api/backup/manifest');
+
+    const fmtSize = b => {
+      if (b < 1024) return b + ' B';
+      if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+      return (b/1048576).toFixed(1) + ' MB';
+    };
+
+    const ifaceRows = d.interfaces.map(i => `
+      <div class="kv-row">
+        <div class="kv-key" style="display:flex;align-items:center;gap:6px">
+          <div class="dot ${i.up?'online':'offline'}" style="width:6px;height:6px"></div>
+          ${esc(i.name)}
+        </div>
+        <div class="kv-val" style="font-size:10.5px">${i.peers} peers · ${esc(i.address||'—')} · port ${esc(i.listen_port||'—')} · ${fmtSize(i.conf_size)}</div>
+      </div>`).join('') || '<div style="font-size:11px;color:var(--text3);padding:8px 0">No interfaces found</div>';
+
+    const metaRows = d.metadata_files.map(f => `
+      <div class="kv-row">
+        <div class="kv-key">${esc(f.name)}</div>
+        <div class="kv-val" style="font-size:10.5px">${fmtSize(f.size)}</div>
+      </div>`).join('') || '<div style="font-size:11px;color:var(--text3);padding:8px 0">No metadata files</div>';
+
+    grid.innerHTML = `
+      <div class="iface-card">
+        <div class="iface-card-title">WireGuard Interfaces (${d.interfaces.length})</div>
+        ${ifaceRows}
+      </div>
+      <div class="iface-card">
+        <div class="iface-card-title" style="margin-bottom:13px">Firewall Metadata (${d.metadata_files.length})</div>
+        ${metaRows}
+        <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+          <div class="kv-row">
+            <div class="kv-key">Users database</div>
+            <div class="kv-val" style="font-size:10.5px">${d.database.exists ? `${d.database.users} user${d.database.users!==1?'s':''}` : 'Not found'}</div>
+          </div>
+        </div>
+      </div>`;
+  } catch(e) {
+    grid.innerHTML = `<div class="iface-card" style="grid-column:1/-1"><div style="font-size:12px;color:var(--red)">${esc(e.message)}</div></div>`;
+  }
+}
+
+async function doBackup() {
+  const btn = document.getElementById('btn-backup');
+  btn.disabled = true; btn.textContent = 'Preparing…';
+  try {
+    // Trigger download via anchor — fetch with credentials
+    const res = await fetch('/api/backup', {credentials:'same-origin'});
+    if (!res.ok) { const d=await res.json(); throw new Error(d.error||'Backup failed'); }
+    const blob = await res.blob();
+    const cd   = res.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename="?([^"]+)"?/);
+    const fname = match ? match[1] : 'wg-manager-backup.zip';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fname; a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Backup downloaded: ' + fname, 'success');
+  } catch(e) { toast(e.message, 'error'); }
+  finally { btn.disabled=false; btn.textContent='Download Backup'; btn.innerHTML=`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 10v3H3v-3"/><path d="M8 2v7M5 6l3 3 3-3"/></svg> Download Backup`; }
+}
+
+async function doRestore() {
+  const fileInput = document.getElementById('restore-file');
+  if (!fileInput.files.length) { toast('Select a backup ZIP file first','error'); return; }
+
+  const resultEl = document.getElementById('restore-result');
+  const btn = document.getElementById('btn-restore');
+  btn.disabled = true; btn.textContent = 'Restoring…';
+  resultEl.style.display = 'none';
+
+  const formData = new FormData();
+  formData.append('backup', fileInput.files[0]);
+  formData.append('restore_wireguard', document.getElementById('restore-wg').checked);
+  formData.append('restore_metadata',  document.getElementById('restore-meta').checked);
+  formData.append('restore_users',     document.getElementById('restore-users').checked);
+  formData.append('restore_secret',    document.getElementById('restore-secret')?.checked ?? true);
+
+  try {
+    const res = await fetch('/api/restore', {method:'POST', credentials:'same-origin', body: formData});
+    const d = await res.json();
+    const isOk = d.success && res.ok;
+    resultEl.style.display = 'block';
+    resultEl.style.background = isOk ? 'var(--green-bg)' : 'var(--red-bg)';
+    resultEl.style.border = `1px solid ${isOk ? 'rgba(0,230,118,.2)' : 'rgba(255,77,106,.2)'}`;
+    resultEl.style.color = isOk ? 'var(--green)' : 'var(--red)';
+
+    const restoredList = (d.restored||[]).map(f=>`<div style="font-size:10.5px;color:var(--text2)">✓ ${esc(f)}</div>`).join('');
+    const errorList    = (d.errors||[]).map(f=>`<div style="font-size:10.5px;color:var(--red)">✕ ${esc(f)}</div>`).join('');
+    resultEl.innerHTML = `<div style="font-weight:700;margin-bottom:6px">${esc(d.message||'Done')}</div>${restoredList}${errorList}`;
+
+    if (isOk) {
+      toast(d.message, 'success');
+      // If users DB was restored, force re-login since session may be invalid
+      if (document.getElementById('restore-users').checked) {
+        toast('Users database restored — please log in again', 'info');
+        setTimeout(doLogout, 2000);
+      } else {
+        setTimeout(refresh, 1500);
+      }
+    } else {
+      toast(d.error || d.message || 'Restore failed', 'error');
+    }
+  } catch(e) {
+    resultEl.style.display='block';
+    resultEl.style.background='var(--red-bg)';
+    resultEl.style.border='1px solid rgba(255,77,106,.2)';
+    resultEl.style.color='var(--red)';
+    resultEl.textContent = e.message;
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled=false;
+    btn.innerHTML=`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6v-3h10v3"/><path d="M8 14V7M5 10l3-3 3 3"/></svg> Restore`;
+  }
+}
+
+// ════════════════════════════════
+// Traffic view
+// ════════════════════════════════
+
+let trafficLiveTimer   = null;
+let trafficChartTimer  = null;
+let trafficHistoryData = [];
+
+function initTrafficView() {
+  if (!activeIface) return;
+  const _ifcD = allInterfaces.find(i => i.name === activeIface);
+  const _dispN = (_ifcD && _ifcD.alias) ? _ifcD.alias : activeIface;
+  document.getElementById('traffic-title').textContent = 'Traffic — ' + _dispN;
+  stopTrafficPolling();
+  loadTrafficChart();
+  pollTrafficLive();
+  trafficLiveTimer  = setInterval(pollTrafficLive,  2000);
+  trafficChartTimer = setInterval(loadTrafficChart, 30000);
+  loadTrafficStats();
+}
+
+function stopTrafficPolling() {
+  if (trafficLiveTimer)  { clearInterval(trafficLiveTimer);  trafficLiveTimer  = null; }
+  if (trafficChartTimer) { clearInterval(trafficChartTimer); trafficChartTimer = null; }
+}
+
+function onTrafficWindowChange() {
+  loadTrafficChart();
+}
+
+// Stop polling when leaving traffic view
+const _origSwitchView = switchView;
+
+async function pollTrafficLive() {
+  if (!activeIface) return;
+  try {
+    const d = await apiFetch('/api/' + activeIface + '/traffic/live');
+    document.getElementById('tst-rx-live').textContent = d.rx_human;
+    document.getElementById('tst-tx-live').textContent = d.tx_human;
+  } catch(e) {}
+}
+
+async function loadTrafficStats() {
+  if (!activeIface) return;
+  try {
+    const d = await apiFetch('/api/' + activeIface + '/traffic/stats');
+    const h = d.h24;
+    document.getElementById('tst-avg').textContent  = h.avg_rx_h + ' / ' + h.avg_tx_h;
+    document.getElementById('tst-peak').textContent = h.max_rx_h + ' / ' + h.max_tx_h;
+    document.getElementById('tst-avg-sub').textContent  = h.samples + ' samples';
+    document.getElementById('tst-peak-sub').textContent = 'last 24h';
+  } catch(e) {}
+}
+
+async function loadTrafficChart() {
+  if (!activeIface) return;
+  const minutes = parseInt(document.getElementById('traffic-window').value) || 60;
+  try {
+    const data = await apiFetch('/api/' + activeIface + '/traffic/history?minutes=' + minutes);
+    trafficHistoryData = data;
+    drawTrafficChart(data, minutes);
+    document.getElementById('traffic-sample-count').textContent = data.length + ' samples';
+  } catch(e) {}
+}
+
+function drawTrafficChart(data, minutes) {
+  const canvas = document.getElementById('traffic-canvas');
+  if (!canvas) return;
+
+  // Size canvas to actual pixel dimensions
+  const rect = canvas.getBoundingClientRect();
+  const dpr  = window.devicePixelRatio || 1;
+  const W    = (rect.width  || 800) * dpr;
+  const H    = (rect.height || 200) * dpr;
+  canvas.width  = W;
+  canvas.height = H;
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const PAD_L = 56 * dpr;
+  const PAD_R = 12 * dpr;
+  const PAD_T = 10 * dpr;
+  const PAD_B = 8  * dpr;
+  const CW    = W - PAD_L - PAD_R;
+  const CH    = H - PAD_T - PAD_B;
+
+  // CSS variable colours — read from document
+  const style  = getComputedStyle(document.documentElement);
+  const C_BG3  = style.getPropertyValue('--bg3').trim()   || '#181d20';
+  const C_GRID = style.getPropertyValue('--border').trim()|| '#1f2830';
+  const C_TEXT = style.getPropertyValue('--text3').trim() || '#3d5060';
+  const C_RX   = '#00e676';
+  const C_TX   = '#ffd166';
+
+  if (!data.length) {
+    ctx.fillStyle = C_TEXT;
+    ctx.font = (12 * dpr) + 'px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('No data yet — collecting samples every 10s', W / 2, H / 2);
+    return;
+  }
+
+  const now    = Math.floor(Date.now() / 1000);
+  const tStart = now - minutes * 60;
+  const tEnd   = now;
+
+  const maxVal = Math.max(...data.map(d => Math.max(d.rx, d.tx)), 1024);
+  // Round up to nice value
+  const niceMax = niceNumber(maxVal * 1.1);
+
+  // Grid lines (5)
+  ctx.strokeStyle = C_GRID;
+  ctx.lineWidth   = dpr;
+  ctx.setLineDash([3 * dpr, 4 * dpr]);
+  for (let i = 0; i <= 4; i++) {
+    const y = PAD_T + CH - (i / 4) * CH;
+    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(PAD_L + CW, y); ctx.stroke();
+    // Y axis labels
+    ctx.fillStyle  = C_TEXT;
+    ctx.font       = (10 * dpr) + 'px JetBrains Mono, monospace';
+    ctx.textAlign  = 'right';
+    ctx.fillText(fmtBps(niceMax * i / 4), PAD_L - 4 * dpr, y + 3 * dpr);
+  }
+  ctx.setLineDash([]);
+
+  // Plot function
+  function plotLine(series, color) {
+    if (!series.length) return;
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1.5 * dpr;
+    ctx.lineJoin    = 'round';
+    let first = true;
+    for (const pt of series) {
+      const x = PAD_L + ((pt.ts - tStart) / (tEnd - tStart)) * CW;
+      const y = PAD_T + CH - (pt.v / niceMax) * CH;
+      if (first) { ctx.moveTo(x, y); first = false; }
+      else        ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Fill under line
+    ctx.globalAlpha = 0.07;
+    ctx.fillStyle   = color;
+    ctx.lineTo(PAD_L + ((series[series.length-1].ts - tStart) / (tEnd - tStart)) * CW, PAD_T + CH);
+    ctx.lineTo(PAD_L + ((series[0].ts - tStart) / (tEnd - tStart)) * CW, PAD_T + CH);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  const rxSeries = data.map(d => ({ts: d.ts, v: d.rx}));
+  const txSeries = data.map(d => ({ts: d.ts, v: d.tx}));
+  plotLine(txSeries, C_TX);
+  plotLine(rxSeries, C_RX);
+
+  // X axis time labels
+  const labelCount = Math.min(6, Math.floor(CW / (60 * dpr)));
+  ctx.fillStyle  = C_TEXT;
+  ctx.font       = (10 * dpr) + 'px JetBrains Mono, monospace';
+  ctx.textAlign  = 'center';
+  for (let i = 0; i <= labelCount; i++) {
+    const t = tStart + (i / labelCount) * (tEnd - tStart);
+    const x = PAD_L + (i / labelCount) * CW;
+    const d = new Date(t * 1000);
+    const label = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+    ctx.fillText(label, x, H - 0);
+  }
+}
+
+function niceNumber(v) {
+  if (v <= 0) return 1;
+  const exp   = Math.floor(Math.log10(v));
+  const frac  = v / Math.pow(10, exp);
+  const nice  = frac < 1.5 ? 1 : frac < 3 ? 2 : frac < 7 ? 5 : 10;
+  return nice * Math.pow(10, exp);
+}
+
+function fmtBps(b) {
+  if (b < 1024)       return Math.round(b) + 'B';
+  if (b < 1024*1024)  return (b/1024).toFixed(0) + 'K';
+  return (b/1024/1024).toFixed(1) + 'M';
+}
+
+// Stop traffic polling when switching away
+document.addEventListener('DOMContentLoaded', () => {
+  // Patch nav items to stop traffic polling when leaving traffic view
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.addEventListener('click', () => {
+      if (!el.onclick || !el.onclick.toString().includes('traffic')) {
+        stopTrafficPolling();
+      }
+    });
+  });
+});
+
+async function exportPeers() {
+  if (!activeIface) return;
+  const btn = document.getElementById('btn-export-peers');
+  btn.disabled = true; btn.textContent = 'Exporting…';
+  try {
+    const res = await fetch('/api/' + activeIface + '/peers/export', {credentials: 'same-origin'});
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Export failed'); }
+    const blob  = await res.blob();
+    const cd    = res.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename="?([^"]+)"?/);
+    const fname = match ? match[1] : activeIface + '-peers.txt';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fname; a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Peers exported: ' + fname, 'success');
+  } catch(e) { toast(e.message, 'error'); }
+  finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8h10M9 4l4 4-4 4"/><path d="M1 2v12"/></svg> Export Peers';
+  }
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString() + ' ' + d.toTimeString().substring(0,5);
+}
+
+// Pause polling when browser tab is hidden
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopTrafficPolling();
+  }
+});
+
+function startApp() {
+  // Start dashboard background
+  document.getElementById('dash-canvas').style.display = 'block';
+  startDashCanvas();
+  // Fetch server config (WAN interface, public IP) — non-blocking
+  apiFetch('/api/config').then(cfg => {
+    if (cfg.wan_interface)    wanInterface   = cfg.wan_interface;
+    if (cfg.server_public_ip) serverPublicIp = cfg.server_public_ip;
+    const banner = document.getElementById('fwd-banner');
+    if (banner) banner.style.display = cfg.ip_forwarding === false ? 'flex' : 'none';
+  }).catch(() => {});
+  refresh();
+  setInterval(refresh, 20000);
+  pollSysStats();
+  setInterval(pollSysStats, 8000);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  checkAuth();
+  renderRuleForm();
+  document.addEventListener('click', e => {
+    // close user menu on outside click
+    const menu = document.getElementById('user-menu');
+    const badge = document.getElementById('user-badge');
+    if (menu && badge && !menu.contains(e.target) && !badge.contains(e.target)) {
+      closeUserMenu();
+    }
+    const pop = document.getElementById('sys-popover');
+    if (!pop.contains(e.target) && !document.getElementById('sys-stats').contains(e.target)) {
+      pop.style.display = 'none';
+    }
+  });
+});
+
+let lastSys = null;
+
+async function pollSysStats() {
+  try {
+    const d = await apiFetch('/api/system');
+    lastSys = d;
+    const cpu = d.cpu_pct ?? 0;
+    const mem = d.mem_pct ?? 0;
+
+    // CPU bar + color
+    const cpuBar = document.getElementById('sys-cpu-bar');
+    cpuBar.style.width = cpu + '%';
+    cpuBar.className = 'sys-bar cpu' + (cpu >= 90 ? ' crit' : cpu >= 70 ? ' warn' : '');
+    document.getElementById('sys-cpu-val').textContent = cpu.toFixed(0) + '%';
+
+    // MEM bar + color
+    const memBar = document.getElementById('sys-mem-bar');
+    memBar.style.width = mem + '%';
+    memBar.className = 'sys-bar mem' + (mem >= 90 ? ' crit' : mem >= 75 ? ' warn' : '');
+    document.getElementById('sys-mem-val').textContent = mem.toFixed(0) + '%';
+
+    document.getElementById('sys-uptime').textContent = 'up ' + (d.uptime || '—');
+  } catch(e) {
+    document.getElementById('sys-cpu-val').textContent = '—';
+    document.getElementById('sys-mem-val').textContent = '—';
+  }
+}
+
+function showSysDetails() {
+  const pop = document.getElementById('sys-popover');
+  if (pop.style.display !== 'none') { pop.style.display = 'none'; return; }
+  if (!lastSys) return;
+  const d = lastSys;
+  const load = d.load ? d.load.map(l => l.toFixed(2)).join(' / ') : '—';
+  pop.querySelector('#sys-popover-body').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:7px">
+      <div style="display:flex;justify-content:space-between;gap:16px"><span style="color:var(--text2)">CPU</span><strong style="color:var(--blue)">${(d.cpu_pct??0).toFixed(1)}%</strong></div>
+      <div style="display:flex;justify-content:space-between;gap:16px"><span style="color:var(--text2)">Memory</span><strong style="color:var(--purple)">${d.mem_used} / ${d.mem_total} (${(d.mem_pct??0).toFixed(1)}%)</strong></div>
+      <div style="display:flex;justify-content:space-between;gap:16px"><span style="color:var(--text2)">Load avg</span><strong style="color:var(--text)">${load}</strong></div>
+      <div style="display:flex;justify-content:space-between;gap:16px"><span style="color:var(--text2)">Uptime</span><strong style="color:var(--green)">${d.uptime||'—'}</strong></div>
+    </div>`;
+  pop.style.display = 'block';
+}
+
+// ═══ API helper ═══
+async function apiFetch(url, opts={}) {
+  const res  = await fetch(API+url, {headers:{'Content-Type':'application/json'},credentials:'same-origin',...opts});
+  const text = await res.text();
+  let d;
+  try { d = JSON.parse(text); }
+  catch(e) { throw new Error(`Server ${res.status}: ${text.substring(0,200)}`); }
+  if (res.status === 401 && url !== '/api/auth/login' && url !== '/api/auth/me') {
+    currentUser = null;
+    document.getElementById('user-badge').style.display='none';
+    showLogin();
+    throw new Error('Session expired — please log in again');
+  }
+  if (!res.ok) throw new Error(d.error||'Request failed');
+  return d;
+}
+
+// ═══ Refresh ═══
+async function refresh() {
+  const spinner = document.getElementById('refresh-spinner');
+  if (spinner) spinner.style.animation = 'spin 0.7s linear infinite';
+  try {
+    allInterfaces = await apiFetch('/api/interfaces');
+    renderSidebarIfaces();
+    renderDashboard();
+    if (activeIface) await refreshActiveIface();
+  } catch(e) { toast('API unreachable: '+e.message, 'error'); }
+  finally {
+    if (spinner) spinner.style.animation = '';
+  }
+}
+
+async function refreshActiveIface() {
+  if (!activeIface) return;
+  const s = await apiFetch(`/api/${activeIface}/status`);
+  ifacePeerState[activeIface] = s;
+  renderPeers(s.peers);
+  renderRulesOverview(s.peers);
+  renderIfaceView(s);
+}
+
+// ═══ Sidebar interfaces list ═══
+function renderSidebarIfaces() {
+  const el = document.getElementById('iface-list');
+  if (!allInterfaces.length) {
+    el.innerHTML = `<div style="padding:6px 18px;font-size:11px;color:var(--text3)">No interfaces found</div>`;
+    return;
+  }
+  el.innerHTML = allInterfaces.map(ifc => `
+    <div class="iface-switcher-item ${activeIface===ifc.name?'active':''}" onclick="selectInterface('${esc(ifc.name)}')">
+      <div class="iface-dot ${ifc.up?'up':''}"></div>
+      <div class="iface-name-txt">${esc(ifc.alias||ifc.name)}</div>
+      <div class="iface-peer-count" title="${esc(ifc.name)}">${ifc.total_peers}p</div>
+    </div>`).join('');
+}
+
+// ═══ Select interface ═══
+async function selectInterface(name) {
+  activeIface = name;
+  const ifcData = allInterfaces.find(i => i.name === name);
+  const displayName = (ifcData && ifcData.alias) ? ifcData.alias : name;
+  document.getElementById('topbar-iface').textContent = displayName;
+  document.getElementById('topbar-iface').style.display = '';
+  document.getElementById('rules-meta-path').textContent = 'wg-manager-' + name + '.json';
+  document.getElementById('iface-tabbar').style.display = 'flex';
+  renderSidebarIfaces();
+  await refreshActiveIface();
+  // Activate traffic tab after data is ready
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.iface-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-traffic').classList.add('active');
+  document.getElementById('tab-traffic').classList.add('active');
+  document.getElementById('topbar-title').textContent = 'Traffic';
+  document.getElementById('topbar-add').style.display = 'none';
+  initTrafficView();
+}
+
+
+// ═══ Nav ═══
+const viewTitles = {dashboard:'Dashboard',peers:'Peers',rules:'Firewall Rules',traffic:'Traffic',interface:'Interface Config',users:'User Management',backup:'Backup & Restore'};
+function switchView(name, el) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  if (el) el.classList.add('active');
+  document.getElementById('topbar-title').textContent = viewTitles[name]||name;
+  // Update topbar-iface with alias if available
+  if (activeIface) {
+    const _ifc = allInterfaces.find(i => i.name === activeIface);
+    document.getElementById('topbar-iface').textContent = (_ifc && _ifc.alias) ? _ifc.alias : activeIface;
+  }
+  const showAdd = (name==='peers') && !!activeIface;
+  document.getElementById('topbar-add').style.display = showAdd?'':'none';
+  if (name==='dashboard') {
+    document.getElementById('topbar-iface').style.display='none';
+    document.getElementById('iface-nav').style.display='none';
+    document.getElementById('iface-tabbar').style.display='none';
+    document.querySelectorAll('.nav-item')[0].classList.add('active');
+    document.getElementById('dash-canvas').style.display = 'block';
+    startDashCanvas();
+  } else {
+    stopDashCanvas();
+    document.getElementById('dash-canvas').style.display = 'none';
+  }
+  // Hide tabbar for non-interface views
+  const ifaceViews = ['peers','rules','traffic','interface'];
+  document.getElementById('iface-tabbar').style.display = ifaceViews.includes(name) ? 'flex' : 'none';
+
+  if (name==='users')     loadUsers();
+  if (name==='backup')    loadBackupManifest();
+  if (name==='traffic')   initTrafficView();
+  if (name==='interface') refreshActiveIface();
+
+  // Sync tab bar active state
+  ['peers','rules','traffic','interface'].forEach(t => {
+    const tab = document.getElementById('tab-'+t);
+    if (tab) tab.classList.toggle('active', t === name);
+  });
+}
+
+// ═══ Dashboard ═══
+function renderDashboard() {
+  const total  = allInterfaces.length;
+  const up     = allInterfaces.filter(i=>i.up).length;
+  const peers  = allInterfaces.reduce((s,i)=>s+i.total_peers,0);
+  const online = allInterfaces.reduce((s,i)=>s+i.online_peers,0);
+  const rx     = allInterfaces.reduce((s,i)=>s+i.rx_bytes,0);
+  const tx     = allInterfaces.reduce((s,i)=>s+i.tx_bytes,0);
+
+  document.getElementById('st-total-ifaces').textContent = total;
+  document.getElementById('st-up-ifaces').textContent    = `${up} up`;
+  document.getElementById('st-total-peers').textContent  = peers;
+  document.getElementById('st-online-peers').textContent = `${online} online`;
+  document.getElementById('st-total-rx').textContent     = fmtBytes(rx);
+  document.getElementById('st-total-tx').textContent     = fmtBytes(tx);
+
+  const cards = document.getElementById('iface-cards');
+  if (!allInterfaces.length) {
+    cards.innerHTML = `<div style="grid-column:1/-1"><div class="empty-state"><h3>No Interfaces</h3><p>Create your first WireGuard interface to get started.</p><button class="btn btn-primary btn-sm" onclick="openCreateInterface()">+ New Interface</button></div></div>`;
+    return;
+  }
+  cards.innerHTML = allInterfaces.map(ifc=>`
+    <div class="iface-overview-card ${ifc.up?'up-card':'down-card'}" onclick="selectInterface('${esc(ifc.name)}')">
+      <div class="ioc-header">
+        <div class="dot ${ifc.up?'online':'offline'}"></div>
+        <div class="ioc-name">${esc(ifc.alias||ifc.name)}</div>
+        <span class="tag ${ifc.up?'tag-green':'tag-dim'}">${ifc.up?'UP':'DOWN'}</span>
+      </div>
+      <div class="ioc-row"><span>Address</span><span>${esc(ifc.address||'—')}</span></div>
+      <div class="ioc-row"><span>Port</span><span>${esc(ifc.listen_port||'—')}</span></div>
+      <div class="ioc-row"><span>Peers</span><span>${ifc.online_peers} online / ${ifc.total_peers} total</span></div>
+      <div class="ioc-row"><span>Transfer</span><span style="color:var(--green)">↓${ifc.rx_human}</span>&nbsp;<span style="color:var(--yellow)">↑${ifc.tx_human}</span></div>
+    </div>`).join('');
+}
+
+// ═══ Peers table ═══
+function renderPeers(peers) {
+  document.getElementById('peers-count').textContent = peers.length+' peer'+(peers.length!==1?'s':'');
+  const tbody = document.getElementById('peers-tbody');
+  if (!peers.length) { tbody.innerHTML=`<tr><td colspan="7"><div class="empty-state" style="padding:36px"><h3>No Peers</h3><p>Click "Add Peer"</p></div></td></tr>`; return; }
+  tbody.innerHTML = peers.map(p=>`
+    <tr data-pubkey="${esc(p.public_key)}" data-name="${esc(p.name||'Unnamed')}" data-ips="${esc(p.allowed_ips)}" data-readonly="${currentUser?.role==='readonly'?'1':'0'}" data-keystored="${p.key_stored?'1':'0'}" style="${!p.enabled?'opacity:.5':''}">
+      <td><div class="peer-name">${esc(p.name||'Unnamed')}</div><div class="peer-key">${esc(p.public_key.substring(0,20))}…</div></td>
+      <td><label class="toggle-wrap"><div class="toggle ${p.enabled?'on':''}"><input type="checkbox" ${p.enabled?'checked':''} style="display:none" data-action="toggle"/><div class="toggle-track"></div><div class="toggle-knob"></div></div></label></td>
+      <td>${statusDot(p)}</td>
+      <td><span class="peer-ip">${esc(p.allowed_ips)}</span></td>
+      <td class="transfer" style="font-size:11px"><span class="rx">↓ ${p.rx_human}</span><br/><span class="tx">↑ ${p.tx_human}</span></td>
+      <td>${(p.ipt_rules&&p.ipt_rules.length)?`<span class="tag tag-purple">${p.ipt_rules.length} rule${p.ipt_rules.length!==1?'s':''}</span>`:`<span class="tag tag-dim">no rules</span>`}</td>
+      <td>${currentUser?.role==='admin' ? (p.key_stored
+        ? `<span class="tag tag-green" title="Private key stored (encrypted)">🔑 stored</span>`
+        : `<span class="tag tag-dim" title="Private key not available">—</span>`) : ''}</td>
+      <td><div class="actions">
+        ${currentUser?.role==='admin' ? `
+        <button class="btn btn-ghost btn-xs" data-action="conf" title="${p.key_stored?'Download config':'Key not stored — config unavailable'}" style="${!p.key_stored?'opacity:.4;cursor:not-allowed':''}">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="11" height="11"><path d="M13 10v3H3v-3"/><path d="M8 2v7M5 6l3 3 3-3"/></svg>
+        </button>` : ''}
+        <button class="btn btn-ghost btn-xs" data-action="rules">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="11" height="11"><path d="M1 3h14M1 8h9M1 13h5"/><circle cx="13" cy="11" r="3"/><path d="M12 11h2M13 10v2"/></svg>${currentUser?.role==='readonly'?'View Rules':'Edit Rules'}
+        </button>
+        ${currentUser?.role!=='readonly'?`<button class="btn btn-ghost btn-xs" data-action="edit">Edit</button><button class="btn btn-danger btn-xs" data-action="delete">✕</button>`:''}
+      </div></td>
+    </tr>`).join('');
+
+  document.getElementById('peers-tbody').onclick = e => {
+    const tr = e.target.closest('tr[data-pubkey]'); if (!tr) return;
+    const {pubkey,name,ips} = tr.dataset;
+    const action = e.target.closest('[data-action]')?.dataset.action;
+    if (action==='conf') {
+      if (tr.dataset.keystored !== '1') { toast('Private key not stored for this peer.','error'); return; }
+      openExistingPeerConf(pubkey, name, ips);
+    }
+    if (action==='rules')  openRules(pubkey, name, ips, tr.dataset.readonly === '1');
+    if (action==='edit')   openEditPeer(pubkey);
+    if (action==='delete') openDelete(pubkey,name);
+  };
+  document.getElementById('peers-tbody').onchange = e => {
+    const inp = e.target.closest('[data-action="toggle"]'); if (!inp) return;
+    const tr  = inp.closest('tr[data-pubkey]'); if (!tr) return;
+    togglePeer(tr.dataset.pubkey, inp);
+  };
+}
+
+// ═══ Rules overview ═══
+function renderRulesOverview(peers) {
+  const el = document.getElementById('rules-overview');
+  if (!peers.length) { el.innerHTML=`<div class="empty-state" style="padding:36px"><h3>No Peers</h3></div>`; return; }
+  el.innerHTML = peers.map((p,i)=>{
+    const rules=p.ipt_rules||[];
+    return `<div class="rpeer-card">
+      <div class="rpeer-header" onclick="toggleRpeer(${i})">
+        <div class="dot ${p.enabled?(p.online?'online':'offline'):'disabled'}"></div>
+        <div style="flex:1"><div style="font-weight:600;color:#fff;font-size:12.5px">${esc(p.name||'Unnamed')}</div><div style="font-size:10px;color:var(--text2)">${esc(p.allowed_ips)}</div></div>
+        ${rules.length?`<span class="tag tag-purple">${rules.length} rule${rules.length!==1?'s':''}</span>`:`<span class="tag tag-dim">no rules</span>`}
+        <button class="btn btn-ghost btn-xs" style="margin-left:8px" data-rpeer-pubkey="${esc(p.public_key)}" data-rpeer-name="${esc(p.name||'Unnamed')}" data-rpeer-ips="${esc(p.allowed_ips)}" onclick="event.stopPropagation();const b=this;openRules(b.dataset.rpeerPubkey,b.dataset.rpeerName,b.dataset.rpeerIps)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="11" height="11"><path d="M11 2l3 3-8 8H3v-3L11 2z"/></svg>Edit Rules
+        </button>
+        <svg class="rpeer-chevron" id="rpeer-chev-${i}" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14" style="margin-left:6px"><path d="M3 5l4 4 4-4"/></svg>
+      </div>
+      <div class="rpeer-body" id="rpeer-body-${i}">
+        ${rules.length?`
+          <div style="font-size:10px;color:var(--text2);margin-bottom:8px">Rules (in order):</div>
+          ${rules.map(r=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+            <div style="font-size:15px;width:22px">${ruleIcon(r.type)}</div>
+            <div style="flex:1"><div style="font-size:11.5px;font-weight:600;color:#fff">${ruleTitle(r)}</div>${ruleSub(r)?`<div style="font-size:10px;color:var(--text2)">${ruleSub(r)}</div>`:''}</div>
+            <span class="tag ${r.action==='ACCEPT'?'tag-green':'tag-red'}">${r.action}</span>
+          </div>`).join('')}
+          ${p.post_up?`<div style="margin-top:10px"><div style="font-size:9.5px;color:var(--text3);margin-bottom:4px">PostUp:</div><div class="cmd-preview" style="max-height:70px">${esc(p.post_up)}</div></div>`:''}
+        `:`<div style="font-size:11px;color:var(--text3);text-align:center;padding:14px">No rules configured.</div>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+function toggleRpeer(i) {
+  document.getElementById('rpeer-body-'+i).classList.toggle('open');
+  document.getElementById('rpeer-chev-'+i).classList.toggle('open');
+}
+
+// ═══ Interface view ═══
+function renderIfaceView(s) {
+  // General info — use cached serverPublicIp (may be empty on first load, that's ok)
+  const pubIpVal = serverPublicIp || '—';
+  const rows = [
+    {k:'Interface',   v: esc(s.interface)},
+    {k:'Alias',       v: s.alias ? '<span style="color:var(--blue)">'+esc(s.alias)+'</span>' : '<span style="color:var(--text3)">not set</span>'},
+    {k:'Status',      v: s.interface_up ? '<span class="tag tag-green">UP</span>' : '<span class="tag tag-red">DOWN</span>'},
+    {k:'Address',     v: esc(s.server_address || '—')},
+    {k:'Listen Port', v: esc(s.listen_port || '—')},
+    {k:'External Port', v: s.external_port ? '<span style="color:var(--blue)">'+esc(s.external_port)+'</span>' : '<span style="color:var(--text3)">same as listen port</span>'},
+    {k:'Public Key',  v: '<span style="font-size:10px;word-break:break-all;font-family:var(--font-mono)">'+esc(s.server_pubkey||'—')+'</span>'},
+    {k:'Public IP',   v: '<span style="color:var(--blue)">'+esc(pubIpVal)+'</span>'},
+    {k:'Total Peers', v: s.total_count},
+    {k:'Config',      v: '<span style="font-size:10px">'+esc(s.config_path)+'</span>'},
+  ];
+  const repairBtn = document.getElementById('btn-repair-iface');
+  const needsRepair = !s.server_address && !s.listen_port;
+  if (repairBtn) repairBtn.style.display = (needsRepair && currentUser && currentUser.role === 'admin') ? '' : 'none';
+
+  if (needsRepair) {
+    document.getElementById('iface-general').innerHTML =
+      '<div style="padding:10px 12px;background:var(--red-bg);border:1px solid rgba(255,77,106,.2);border-radius:var(--radius);border-left:3px solid var(--red);margin-bottom:10px">' +
+      '<div style="font-size:11px;color:var(--red);font-weight:700;margin-bottom:3px">⚠ Incomplete [Interface] configuration</div>' +
+      '<div style="font-size:11px;color:var(--text2);line-height:1.6">The <code style="color:var(--blue)">[Interface]</code> section in <code style="color:var(--blue)">' + esc(s.config_path) + '</code> is missing PrivateKey, Address and/or ListenPort.<br/>Click <strong>Fix Config</strong> to repair manually.</div>' +
+      '</div>';
+  } else {
+    document.getElementById('iface-general').innerHTML = rows.map(r =>
+      '<div class="kv-row"><div class="kv-key">'+r.k+'</div><div class="kv-val">'+r.v+'</div></div>'
+    ).join('');
+  }
+
+  // Toggle switch — set checkbox state directly
+  const cb  = document.getElementById('iface-toggle-cb');
+  const txt = document.getElementById('btn-iface-toggle-txt');
+  if (cb) {
+    cb.checked = !!s.interface_up;
+    const toggleEl = document.getElementById('iface-toggle-switch');
+    if (toggleEl) toggleEl.classList.toggle('on', !!s.interface_up);
+  }
+  if (txt) {
+    txt.textContent  = s.interface_up ? 'UP' : 'DOWN';
+    txt.style.color  = s.interface_up ? 'var(--green)' : 'var(--text3)';
+  }
+
+  // Firewall / routing tab — separate API call, failures are silent
+  // Firewall panel — only fetch if we have an active interface and valid session
+  const _iface = activeIface;
+  if (!_iface) return;
+  apiFetch('/api/' + _iface + '/interface')
+    .then(cfg => {
+      window._ifaceCfg = cfg;
+      function fwVal(v) {
+        if (!v || v === '—') return '—';
+        // Render each line separately
+        const lines = v.split(/\n|;\s*/).map(l => l.trim()).filter(Boolean);
+        if (lines.length <= 1) return esc(v);
+        return '<div style="display:flex;flex-direction:column;gap:3px;max-height:140px;overflow-y:auto">' +
+          lines.map(l => '<code style="font-size:10px;color:var(--green);background:var(--bg);padding:2px 6px;border-radius:3px;display:block;white-space:pre-wrap;word-break:break-all">'+esc(l)+'</code>').join('') +
+          '</div>';
+      }
+      const fw = [
+        {k:'PostUp',    v: fwVal(cfg.PostUp)},
+        {k:'PostDown',  v: fwVal(cfg.PostDown)},
+        {k:'DNS',       v: '<span style="color:var(--text3);font-size:10px">not set on server — belongs in client config</span>'},
+        {k:'MTU',       v: esc(cfg.MTU    || 'default')},
+        {k:'PrivateKey',v: '••••••••••••••••••••••'},
+      ];
+      document.getElementById('iface-firewall').innerHTML = fw.map(r =>
+        '<div class="kv-row" style="align-items:flex-start;gap:12px"><div class="kv-key" style="padding-top:4px;flex-shrink:0;width:80px">'+r.k+'</div><div style="flex:1;overflow:hidden;text-align:left">'+r.v+'</div></div>'
+      ).join('');
+    })
+    .catch(() => {});
+}
+
+// ═══ Create Interface ═══
+function openCreateInterface() {
+  // Suggest next available wgN name
+  const existing = allInterfaces.map(i=>i.name);
+  let n=0; while(existing.includes('wg'+n)) n++;
+  document.getElementById('ci-name').value='wg'+n;
+  document.getElementById('ci-alias').value='';
+  document.getElementById('ci-addr').value=`10.${n}.0.1/24`;
+  document.getElementById('ci-port').value=String(51820+n);
+  document.getElementById('ci-dns').value='';
+  document.getElementById('ci-postup').value='';
+  document.getElementById('ci-postdown').value='';
+  openModal('modal-create-iface');
+}
+
+async function createInterface() {
+  const btn=document.getElementById('btn-create-iface');
+  btn.disabled=true; btn.textContent='Creating…';
+  try {
+    const payload={
+      name:     document.getElementById('ci-name').value.trim(),
+      address:  document.getElementById('ci-addr').value.trim(),
+      alias:         document.getElementById('ci-alias').value.trim(),
+      listen_port:   document.getElementById('ci-port').value.trim(),
+      external_port: document.getElementById('ci-extport').value.trim(),
+      post_up:  document.getElementById('ci-postup').value.trim(),
+      post_down:document.getElementById('ci-postdown').value.trim(),
+    };
+    const res = await apiFetch('/api/interfaces',{method:'POST',body:JSON.stringify(payload)});
+    toast(`${res.name} created. Public key: ${res.public_key.substring(0,20)}…`,'success');
+    closeModal('modal-create-iface');
+    await refresh();
+    selectInterface(res.name);
+  } catch(e){ toast(e.message,'error'); }
+  finally{ btn.disabled=false; btn.textContent='Create Interface'; }
+}
+
+// ═══ Delete Interface ═══
+function openDeleteInterface() {
+  document.getElementById('del-iface-name').textContent = activeIface;
+  openModal('modal-delete-iface');
+}
+async function confirmDeleteInterface() {
+  try {
+    await apiFetch(`/api/interfaces/${encodeURIComponent(activeIface)}/delete`,{method:'POST'});
+    toast(`${activeIface} deleted.`,'success');
+    closeModal('modal-delete-iface');
+    activeIface=null;
+    document.getElementById('iface-nav').style.display='none';
+    document.getElementById('topbar-iface').style.display='none';
+    switchView('dashboard', document.querySelectorAll('.nav-item')[0]);
+    await refresh();
+  } catch(e){ toast(e.message,'error'); }
+}
+
+// ═══ Interface toggle / restart ═══
+let _toggleBusy = false;
+async function toggleActiveInterface() {
+  if (!activeIface || _toggleBusy) return;
+  _toggleBusy = true;
+  try {
+    const res = await apiFetch('/api/interfaces/' + activeIface + '/toggle', {method:'POST'});
+    toast(res.message, res.up ? 'success' : 'info');
+    // Wait for wg-quick to finish then refresh actual state
+    setTimeout(async () => {
+      await refresh();
+      if (activeIface) await refreshActiveIface();
+      _toggleBusy = false;
+    }, 2500);
+  } catch(e) {
+    toast(e.message, 'error');
+    _toggleBusy = false;
+  }
+}
+async function restartActiveInterface() {
+  if (!activeIface) return;
+  try {
+    await apiFetch(`/api/interfaces/${activeIface}/restart`,{method:'POST'});
+    toast(`${activeIface} restarted.`,'success');
+    setTimeout(refreshActiveIface,1500);
+  } catch(e){ toast(e.message,'error'); }
+}
+
+// ═══ Edit Interface config ═══
+function openEditInterface() {
+  const cfg = window._ifaceCfg || {};
+  const s   = ifacePeerState[activeIface] || {};
+  document.getElementById('modal-iface-title').textContent = 'Edit ' + activeIface;
+  document.getElementById('if-alias').value   = s.alias         || '';
+  document.getElementById('if-addr').value    = cfg.Address     || '';
+  document.getElementById('if-port').value    = cfg.ListenPort  || '';
+  document.getElementById('if-extport').value = s.external_port || '';
+  document.getElementById('if-mtu').value     = cfg.MTU         || '';
+  document.getElementById('if-postup').value   = (cfg.PostUp   ||'').replace(/;\s*/g,'\n').trim();
+  document.getElementById('if-postdown').value = (cfg.PostDown ||'').replace(/;\s*/g,'\n').trim();
+  openModal('modal-iface');
+}
+function openRepairInterface() {
+  document.getElementById('repair-privkey').value  = '';
+  document.getElementById('repair-address').value  = '';
+  document.getElementById('repair-port').value     = '51820';
+  document.getElementById('repair-dns').value      = '';
+  document.getElementById('repair-mtu').value      = '';
+  openModal('modal-repair-iface');
+}
+
+async function confirmGenerateNewKey() {
+  if (!confirm('WARNING: Generating a new PrivateKey will invalidate ALL existing peer connections — they will stop working until manually reconfigured.\n\nAre you absolutely sure?')) return;
+  try {
+    const d = await apiFetch('/api/peers/generate-keys');
+    document.getElementById('repair-privkey').value = d.private_key;
+    toast('New key generated — remember all peers need to be updated!', 'info');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function saveRepairInterface() {
+  const privkey = document.getElementById('repair-privkey').value.trim();
+  const address = document.getElementById('repair-address').value.trim();
+  const port    = document.getElementById('repair-port').value.trim();
+  const dns     = document.getElementById('repair-dns').value.trim();
+  const mtu     = document.getElementById('repair-mtu').value.trim();
+  if (!privkey) { toast('PrivateKey is required', 'error'); return; }
+  if (!address) { toast('Address is required', 'error'); return; }
+  if (!port)    { toast('ListenPort is required', 'error'); return; }
+  try {
+    await apiFetch('/api/' + activeIface + '/interface', {method:'PUT', body: JSON.stringify({
+      PrivateKey: privkey,
+      Address:    address,
+      ListenPort: port,
+      DNS:        dns,
+      MTU:        mtu,
+    })});
+    toast('Interface configuration saved.', 'success');
+    closeModal('modal-repair-iface');
+    refreshActiveIface();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function saveInterface() {
+  try {
+    await apiFetch('/api/'+activeIface+'/interface',{method:'PUT',body:JSON.stringify({
+      alias:         document.getElementById('if-alias').value.trim(),
+      Address:       document.getElementById('if-addr').value.trim(),
+      ListenPort:    document.getElementById('if-port').value.trim(),
+      external_port: document.getElementById('if-extport').value.trim(),
+      MTU:           document.getElementById('if-mtu').value.trim(),
+      PostUp:        document.getElementById('if-postup').value.trim().split('\n').map(s=>s.trim()).filter(Boolean).join('; '),
+      PostDown:      document.getElementById('if-postdown').value.trim().split('\n').map(s=>s.trim()).filter(Boolean).join('; '),
+    })});
+    toast('Interface updated.','success'); closeModal('modal-iface'); refreshActiveIface();
+  } catch(e){ toast(e.message,'error'); }
+}
+
+// ═══ Peer toggle ═══
+async function togglePeer(pubkey, checkbox) {
+  const toggleEl = checkbox.closest('.toggle');
+  const was = toggleEl.classList.contains('on');
+  try {
+    const res = await apiFetch('/api/'+activeIface+'/peers/'+encodeURIComponent(pubkey)+'/toggle', {method:'POST'});
+    // Optimistically update visual state
+    toggleEl.classList.toggle('on', !!res.enabled);
+    toast(res.message, 'success');
+    refreshActiveIface();
+  } catch(e) {
+    toggleEl.classList.toggle('on', was);
+    toast(e.message, 'error');
+  }
+}
+
+// ═══ Add/Edit Peer ═══
+function openAddPeer() {
+  if (!activeIface){ toast('Select an interface first.','info'); return; }
+  editingPeerKey=null;
+  document.getElementById('modal-peer-title').textContent='Add Peer';
+  document.getElementById('btn-save-peer').textContent='Save Peer';
+  document.getElementById('f-pubkey').readOnly=false;
+  ['f-name','f-ips','f-pubkey','f-privkey','f-psk','f-ka','f-dns'].forEach(id=>document.getElementById(id).value='');
+  openModal('modal-peer');
+}
+function openEditPeer(pubkey) {
+  const s=ifacePeerState[activeIface]; if (!s) return;
+  const p=s.peers.find(x=>x.public_key===pubkey); if (!p) return;
+  editingPeerKey=pubkey;
+  document.getElementById('modal-peer-title').textContent='Edit Peer';
+  document.getElementById('btn-save-peer').textContent='Update';
+  document.getElementById('f-name').value=p.name||'';
+  document.getElementById('f-ips').value=p.allowed_ips||'';
+  document.getElementById('f-pubkey').value=p.public_key; document.getElementById('f-pubkey').readOnly=true;
+  document.getElementById('f-privkey').value='';
+  document.getElementById('f-psk').value=p.preshared_key||'';
+  document.getElementById('f-ka').value=p.persistent_keepalive||'';
+  document.getElementById('f-dns').value=p.dns||'';
+  openModal('modal-peer');
+}
+async function generateKeys(){try{const d=await apiFetch('/api/peers/generate-keys');document.getElementById('f-pubkey').value=d.public_key;document.getElementById('f-privkey').value=d.private_key;document.getElementById('f-psk').value=d.preshared_key;}catch(e){toast(e.message,'error');}}
+async function generatePsk(){try{const d=await apiFetch('/api/peers/generate-keys');document.getElementById('f-psk').value=d.preshared_key;}catch(e){toast(e.message,'error');}}
+async function savePeer() {
+  const btn=document.getElementById('btn-save-peer'); btn.disabled=true; btn.textContent='Saving…';
+  try {
+    const payload={name:document.getElementById('f-name').value.trim(),allowed_ips:document.getElementById('f-ips').value.trim(),public_key:document.getElementById('f-pubkey').value.trim(),private_key:document.getElementById('f-privkey').value.trim(),preshared_key:document.getElementById('f-psk').value.trim(),persistent_keepalive:document.getElementById('f-ka').value.trim(),dns:document.getElementById('f-dns').value.trim()};
+    if (editingPeerKey) {
+      await apiFetch(`/api/${activeIface}/peers/${encodeURIComponent(editingPeerKey)}`,{method:'PUT',body:JSON.stringify(payload)});
+      toast('Peer updated.','success'); closeModal('modal-peer');
+    } else {
+      const res=await apiFetch(`/api/${activeIface}/peers`,{method:'POST',body:JSON.stringify(payload)});
+      toast(res.message,'success'); closeModal('modal-peer');
+      if (res.client_config || res.private_key) {
+        // Fetch server public key for the config
+        let serverPubkey = '';
+        try {
+          const st = await apiFetch(`/api/${activeIface}/status`);
+          // server pubkey isn't directly in status — use what we got from add response
+          // or fall back to placeholder
+        } catch(e) {}
+        openConfModal({
+          private_key:   res.private_key || '',
+          allowed_ips:   payload.allowed_ips || res.allowed_ips || '',
+          dns:           payload.dns || '',
+          server_pubkey: res.server_pubkey || '',
+          listen_port:   res.listen_port || '',
+          preshared_key: payload.preshared_key || '',
+          name:          payload.name || '',
+          endpoint:      res.endpoint || (serverPublicIp ? serverPublicIp + ':' + (res.listen_port||'51820') : ''),
+        });
+      }
+    }
+    refreshActiveIface();
+  } catch(e){ toast(e.message,'error'); }
+  finally{ btn.disabled=false; btn.textContent=editingPeerKey?'Update':'Save Peer'; }
+}
+// ════════════════════════════════
+// Client config builder
+// ════════════════════════════════
+
+let confPlatform    = 'windows';
+let confBaseData    = {};   // raw data from add-peer response
+
+function selectPlatform(p) {
+  confPlatform = p;
+  document.getElementById('plt-windows').classList.toggle('active', p === 'windows');
+  document.getElementById('plt-linux').classList.toggle('active',   p === 'linux');
+  document.getElementById('plt-other').classList.toggle('active',   p === 'other');
+  document.getElementById('conf-win-warning').style.display = p === 'windows' ? '' : 'none';
+  // Hide routing section for 'other' — clean config only
+  const routingSection = document.getElementById('conf-routing-section');
+  if (routingSection) routingSection.style.display = p === 'other' ? 'none' : '';
+  // Show QR code section only for 'other'
+  const qrSection = document.getElementById('conf-qr-section');
+  if (qrSection) qrSection.style.display = p === 'other' ? 'flex' : 'none';
+  rebuildConf();
+}
+
+async function openExistingPeerConf(pubkey, name, allowedIps) {
+  try {
+    const d = await apiFetch('/api/' + activeIface + '/peers/' + encodeURIComponent(pubkey) + '/privkey');
+    openConfModal({
+      private_key:   d.private_key,
+      allowed_ips:   d.allowed_ips || allowedIps.split(',')[0].trim(),
+      dns:           d.dns || '',
+      server_pubkey: d.server_pubkey || '',
+      listen_port:   d.listen_port || '51820',
+      preshared_key: d.preshared_key || '',
+      name:          name,
+      endpoint:      d.endpoint || (serverPublicIp ? serverPublicIp + ':' + (d.listen_port||'51820') : ''),
+    });
+  } catch(e) {
+    toast(e.message, 'error');
+  }
+}
+
+function openConfModal(peerData) {
+  // peerData: {private_key, public_key, allowed_ips, dns, server_pubkey, listen_port, name}
+  confBaseData = peerData;
+  confPlatform = 'windows';
+  document.getElementById('plt-windows').classList.add('active');
+  document.getElementById('plt-linux').classList.remove('active');
+  document.getElementById('plt-other').classList.remove('active');
+  const routingSection = document.getElementById('conf-routing-section');
+  if (routingSection) routingSection.style.display = '';
+  document.getElementById('conf-default-route').checked = false;
+  document.getElementById('conf-routes').value = '';
+  document.getElementById('conf-dns-override').value = '';
+  document.getElementById('conf-win-warning').style.display = '';  // windows is default
+  rebuildConf();
+  openModal('modal-conf');
+}
+
+function rebuildConf() {
+  const d            = confBaseData;
+  const platform     = confPlatform;
+  const defaultRoute = document.getElementById('conf-default-route')?.checked;
+  const routesRaw    = document.getElementById('conf-routes')?.value || '';
+  const dnsOverride  = document.getElementById('conf-dns-override')?.value.trim() || '';
+
+  const routes = routesRaw.replace(/\r/g, '').split('\n')
+    .flatMap(r => r.split(','))
+    .map(r => r.trim())
+    .filter(r => r.length > 0 && r.charCodeAt(0) >= 48 && r.charCodeAt(0) <= 57);
+
+  const dns = dnsOverride || d.dns || '';
+
+  let postUp = '', preDown = '';
+
+  if (platform === 'other') {
+    let conf = '';
+    conf += '[Interface]\n';
+    conf += 'PrivateKey = ' + (d.private_key || '(private key)') + '\n';
+    conf += 'Address = '    + (d.allowed_ips  || '10.0.0.2/32')  + '\n';
+    if (dns) conf += 'DNS = ' + dns + '\n';
+    conf += '\n[Peer]\n';
+    conf += 'PublicKey = '           + (d.server_pubkey || '(server public key)') + '\n';
+    conf += 'Endpoint = '            + (d.endpoint || '<SERVER_IP>:' + (d.listen_port || '51820')) + '\n';
+    conf += 'AllowedIPs = 0.0.0.0/0, ::/0\n';
+    conf += 'PersistentKeepalive = 25\n';
+    if (d.preshared_key) conf += 'PresharedKey = ' + d.preshared_key + '\n';
+    clientConfData = conf;
+    clientConfName = (d.name || 'client').replace(/\s+/g, '-').toLowerCase();
+    document.getElementById('client-conf-box').textContent = conf;
+    // Generate QR for 'other' platform
+    if (confPlatform === 'other') {
+      const qrCanvas = document.getElementById('conf-qr-canvas');
+      if (qrCanvas && conf.trim()) {
+        qrCanvas.innerHTML = '';
+        try {
+          new QRCode(qrCanvas, {text: conf.trim(), width: 200, height: 200,
+            colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M});
+        } catch(e) {
+          qrCanvas.innerHTML = '<div style="color:#f66;font-size:10px;padding:10px">QR error: ' + e.message + '</div>';
+        }
+      }
+    }
+    return;
+  }
+
+  if (platform === 'windows' && (defaultRoute || routes.length)) {
+    const parts_up   = [];
+    const parts_down = [];
+    parts_up.push('$wgInterface = Get-NetAdapter -Name %WIREGUARD_TUNNEL_NAME%');
+    parts_down.push('$wgInterface = Get-NetAdapter -Name %WIREGUARD_TUNNEL_NAME%');
+    if (defaultRoute) {
+      parts_up.push('route add 0.0.0.0 mask 0.0.0.0 0.0.0.0 IF $wgInterface.ifIndex metric 9999');
+      parts_up.push('Set-NetIPInterface -InterfaceIndex $wgInterface.ifIndex -InterfaceMetric 9999');
+      parts_down.push('route delete 0.0.0.0 mask 0.0.0.0 0.0.0.0 if $wgInterface.ifIndex metric 9999');
+      parts_down.push('Set-NetIPInterface -InterfaceIndex $wgInterface.ifIndex -InterfaceMetric 9999');
+    }
+    for (const route of routes) {
+      const parts = route.split('/');
+      const net   = parts[0];
+      const mask  = parts[1] ? cidrToMask(parseInt(parts[1])) : '255.255.255.0';
+      parts_up.push('route add '    + net + ' mask ' + mask + ' 0.0.0.0 IF $wgInterface.ifIndex');
+      parts_down.push('route delete ' + net + ' mask ' + mask + ' 0.0.0.0 if $wgInterface.ifIndex');
+    }
+    postUp  = 'powershell -command "' + parts_up.join('; ')   + ';"';
+    preDown = 'powershell -command "' + parts_down.join('; ') + ';"';
+  }
+
+  if (platform === 'linux' && (defaultRoute || routes.length)) {
+    const iface     = '%i';
+    const up_cmds   = [];
+    const down_cmds = [];
+    if (defaultRoute) {
+      up_cmds.push('ip route add default dev ' + iface + ' metric 9999');
+      down_cmds.push('ip route del default dev ' + iface + ' metric 9999');
+    }
+    for (const route of routes) {
+      up_cmds.push('ip route add ' + route + ' dev ' + iface);
+      down_cmds.push('ip route del ' + route + ' dev ' + iface);
+    }
+    postUp  = up_cmds.join('; ');
+    preDown = down_cmds.join('; ');
+  }
+
+  let conf = '';
+  conf += '[Interface]\n';
+  conf += 'PrivateKey = ' + (d.private_key || '(private key)') + '\n';
+  conf += 'Address = '    + (d.allowed_ips  || '10.0.0.2/32')  + '\n';
+  if (dns) conf += 'DNS = ' + dns + '\n';
+  if ((defaultRoute || routes.length) && (platform === 'windows' || platform === 'linux')) {
+    conf += 'Table = off\n';
+  }
+  if (postUp)  conf += 'PostUp = '  + postUp  + '\n';
+  if (preDown) conf += 'PreDown = ' + preDown + '\n';
+
+  conf += '\n[Peer]\n';
+  conf += 'PublicKey = '           + (d.server_pubkey || '(server public key)') + '\n';
+  conf += 'Endpoint = '            + (d.endpoint || '<SERVER_IP>:' + (d.listen_port || '51820')) + '\n';
+  conf += 'AllowedIPs = 0.0.0.0/0, ::/0\n';
+  conf += 'PersistentKeepalive = 25\n';
+  if (d.preshared_key) conf += 'PresharedKey = ' + d.preshared_key + '\n';
+
+  clientConfData = conf;
+  clientConfName = (d.name || 'client').replace(/\s+/g, '-').toLowerCase();
+  document.getElementById('client-conf-box').textContent = conf;
+  // Regenerate QR if 'other' platform is selected
+  if (confPlatform === 'other') {
+    const qrCanvas = document.getElementById('conf-qr-canvas');
+    if (qrCanvas && conf && conf.trim()) {
+      qrCanvas.innerHTML = '';
+      try {
+        new QRCode(qrCanvas, {
+          text:         conf.trim(),
+          width:        200,
+          height:       200,
+          colorDark:    '#000000',
+          colorLight:   '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M,
+        });
+      } catch(e) {
+        qrCanvas.innerHTML = '<div style="color:#f66;font-size:10px;padding:10px">QR error: ' + e.message + '</div>';
+      }
+    }
+  }
+}
+function cidrToMask(prefix) {
+  const mask = (0xFFFFFFFF << (32 - prefix)) >>> 0;
+  return [(mask >>> 24) & 0xFF, (mask >>> 16) & 0xFF, (mask >>> 8) & 0xFF, mask & 0xFF].join('.');
+}
+
+function copyConf() { navigator.clipboard.writeText(clientConfData).then(()=>toast('Copied!','success')); }
+function downloadConf() {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([clientConfData], {type:'text/plain'}));
+  a.download = clientConfName + '.conf';
+  a.click();
+}
+
+// ═══ IPv4 forwarding ═══
+async function enableIpForwarding() {
+  try {
+    await apiFetch('/api/system/ip-forwarding', {method: 'POST'});
+    toast('IPv4 forwarding enabled.', 'success');
+    document.getElementById('fwd-banner').style.display = 'none';
+  } catch(e) {
+    toast('Failed to enable forwarding: ' + e.message, 'error');
+  }
+}
+
+// ═══ Delete peer ═══
+function openDelete(pubkey,name){deletingPeerKey=pubkey;document.getElementById('del-name').textContent=name;openModal('modal-delete');}
+async function confirmDelete(){
+  try{await apiFetch(`/api/${activeIface}/peers/${encodeURIComponent(deletingPeerKey)}`,{method:'DELETE'});toast('Peer removed.','success');closeModal('modal-delete');refreshActiveIface();}catch(e){toast(e.message,'error');}
+}
+
+// ═══ iptables Rule Builder ═══
+async function openRules(pubkey, name, allowedIps, readonly) {
+  if (readonly === undefined) readonly = false;
+  rulesPeerKey        = pubkey;
+  rulesPeerAllowedIps = allowedIps || '';
+  rulesPeerIp         = (allowedIps || '').split(',')[0].trim();
+  document.getElementById('rules-peer-name').textContent = name;
+  // Populate field — excluding the peer's own /32 address
+  const aipsInput = document.getElementById('rules-peer-allowed-ips');
+  if (aipsInput) {
+    const extraRoutes = (allowedIps || '').split(',')
+      .map(s => s.trim())
+      .filter(s => s && s !== rulesPeerIp)
+      .join(', ');
+    aipsInput.value = extraRoutes;
+  }
+  try {
+    const d = await apiFetch(`/api/${activeIface}/peers/${encodeURIComponent(pubkey)}/rules`);
+    currentRules = d.ipt_rules || [];
+  } catch(e) { currentRules = []; }
+
+  const isReadonly = readonly || currentUser?.role === 'readonly';
+
+  // Title prefix
+  const titlePrefix = document.getElementById('rules-modal-title-prefix');
+  if (titlePrefix) titlePrefix.textContent = isReadonly ? 'Firewall Rules —' : 'Edit Rules —';
+
+  // AllowedIPs red — readonly
+  const aipsRow = document.getElementById('rules-allowed-ips-row');
+  if (aipsRow) {
+    aipsRow.style.display = isReadonly ? 'none' : '';
+    const aipsInput = document.getElementById('rules-peer-allowed-ips');
+    if (aipsInput) aipsInput.readOnly = isReadonly;
+  }
+
+  // Left panel (add rule form) — hide for readonly
+  const leftPanel = document.querySelector('#modal-rules .ipt-left');
+  if (leftPanel) leftPanel.style.display = isReadonly ? 'none' : '';
+
+  // Footer save + clear buttons
+  const saveBtn  = document.getElementById('rules-modal-save-btn');
+  const clearBtn = document.getElementById('rules-modal-clear-btn');
+  if (saveBtn)  saveBtn.style.display  = isReadonly ? 'none' : '';
+  if (clearBtn) clearBtn.style.display = isReadonly ? 'none' : '';
+
+  // Readonly notice
+  const roNotice = document.getElementById('rules-readonly-notice');
+  if (roNotice) roNotice.style.display = isReadonly ? 'flex' : 'none';
+
+  renderRulesList(isReadonly);
+  if (!isReadonly) updateCmdPreview();
+  openModal('modal-rules');
+}
+function selectRuleType(type,el){
+  currentRuleType=type;
+  document.querySelectorAll('.rtb').forEach(b=>b.classList.remove('selected'));
+  el.classList.add('selected');
+  renderRuleForm();
+}
+function renderRuleForm(){
+  const box=document.getElementById('rule-form-box'); if(!box)return;
+  const actionHtml=`<div class="form-group" style="margin-top:4px"><label>Action</label><div class="action-pills"><div class="action-pill ap-accept ${currentAction==='ACCEPT'?'sel':''}" onclick="setAction('ACCEPT',this)">✓ ACCEPT</div><div class="action-pill ap-drop ${currentAction==='DROP'?'sel':''}" onclick="setAction('DROP',this)">✕ DROP</div></div></div>`;
+  const s=ifacePeerState[activeIface];
+  const otherPeers=s?s.peers.filter(p=>p.public_key!==rulesPeerKey):[];
+
+  if(currentRuleType==='port'){
+    box.innerHTML=`<div class="form-row"><div class="form-group"><label>Port(s) <span class="hint">e.g. 80 or 8000:9000</span></label><input id="rf-port" placeholder="e.g. 443"/></div><div class="form-group"><label>Protocol</label><select id="rf-proto"><option value="both">TCP + UDP</option><option value="tcp">TCP only</option><option value="udp">UDP only</option></select></div></div>${actionHtml}<div style="font-size:9.5px;color:var(--text3);margin-top:4px">Leave port empty to match all traffic on selected protocol.</div>`;
+  } else if(currentRuleType==='destination'){
+    box.innerHTML=`<div class="form-group"><label>Destination IP / Subnet</label><input id="rf-dst" placeholder="e.g. 192.168.1.0/24"/></div>${actionHtml}<div style="font-size:9.5px;color:var(--text3);margin-top:4px">Use <code style="color:var(--blue)">0.0.0.0/0</code> to match any destination.</div>`;
+  } else if(currentRuleType==='internet'){
+    box.innerHTML=`${actionHtml}<div style="font-size:9.5px;color:var(--text3);margin-top:6px">Catch-all FORWARD rule. <strong>DROP</strong> blocks internet, <strong>ACCEPT</strong> explicitly allows.</div>`;
+  } else if(currentRuleType==='ratelimit'){
+    box.innerHTML=`<div class="form-row"><div class="form-group"><label>Download cap <span class="hint">KB/s</span></label><input id="rf-dl" type="number" min="1" placeholder="e.g. 2048"/></div><div class="form-group"><label>Upload cap <span class="hint">KB/s</span></label><input id="rf-ul" type="number" min="1" placeholder="e.g. 512"/></div></div><div style="font-size:9.5px;color:var(--text3);margin-top:4px">Uses iptables <code style="color:var(--blue)">hashlimit</code>. Leave blank to skip that direction.</div>`;
+  } else if(currentRuleType==='nomasq'){
+    box.innerHTML=`<div class="form-group"><label>Outbound interface <span class="hint">WAN — auto-detected</span></label><input id="rf-nomasq-iface" placeholder="eth0" value="${wanInterface}"/></div><div style="font-size:9.5px;color:var(--text3);margin-top:4px">Inserts <code style="color:var(--blue)">-j RETURN</code> in <code style="color:var(--blue)">nat/POSTROUTING</code> before global MASQUERADE.<br/>Peer exits with real VPN IP (<strong style="color:var(--text)">${rulesPeerIp}</strong>) as source.<br/>Add static route to this IP on upstream router/switch.</div>`;
+  }
+}
+function setAction(action,el){currentAction=action;document.querySelectorAll('.action-pill').forEach(p=>p.classList.remove('sel'));el.classList.add('sel');}
+function addRuleToList(){
+  let rule={type:currentRuleType,action:currentAction};
+  if(currentRuleType==='port'){rule.port=(document.getElementById('rf-port')?.value||'').trim();rule.proto=document.getElementById('rf-proto')?.value||'both';}
+  else if(currentRuleType==='destination'){const dst=(document.getElementById('rf-dst')?.value||'').trim();if(!dst){toast('Enter a destination.','error');return;}rule.dst_ip=dst;}
+
+  else if(currentRuleType==='ratelimit'){const dl=document.getElementById('rf-dl')?.value.trim(),ul=document.getElementById('rf-ul')?.value.trim();if(!dl&&!ul){toast('Enter at least one bandwidth limit.','error');return;}if(dl)rule.kbps_dl=parseInt(dl);if(ul)rule.kbps_ul=parseInt(ul);}
+  else if(currentRuleType==='nomasq'){rule.out_iface=(document.getElementById('rf-nomasq-iface')?.value.trim()||wanInterface);}
+  currentRules.push(rule);renderRulesList();updateCmdPreview();
+}
+function renderRulesList(readonly) {
+  if (readonly === undefined) readonly = currentUser?.role === 'readonly';
+  const wrap = document.getElementById('rules-list-wrap');
+  document.getElementById('rules-count-badge').textContent = currentRules.length;
+  if (!currentRules.length) {
+    wrap.innerHTML = `<div style="font-size:11px;color:var(--text3);text-align:center;padding:22px">${readonly ? 'No rules configured for this peer.' : 'No rules — add them on the left'}</div>`;
+    return;
+  }
+  wrap.innerHTML = currentRules.map((r, i) => `
+    <div class="rule-card">
+      <div class="rule-card-icon">${ruleIcon(r.type)}</div>
+      <div class="rule-card-body">
+        <div class="rule-card-title">${ruleTitle(r)}</div>
+        ${ruleSub(r) ? `<div class="rule-card-sub">${ruleSub(r)}</div>` : ''}
+      </div>
+      <span class="tag ${r.action==='ACCEPT'?'tag-green':'tag-red'}" style="font-size:9px;flex-shrink:0">${r.action}</span>
+      ${readonly ? '' : `<button class="rule-card-del" onclick="removeRule(${i})"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" width="10" height="10"><path d="M1 1l10 10M11 1L1 11"/></svg></button>`}
+    </div>`).join('');
+}
+function removeRule(i){currentRules.splice(i,1);renderRulesList();updateCmdPreview();}
+function clearAllRules(){currentRules=[];renderRulesList();updateCmdPreview();}
+async function updateCmdPreview(){
+  const el=document.getElementById('cmd-preview');
+  if(!currentRules.length){el.innerHTML=`<span class="cmd-empty">No rules configured</span>`;return;}
+  try{
+    const res=await apiFetch(`/api/${activeIface}/peers/${encodeURIComponent(rulesPeerKey)}/rules/preview`,{method:'POST',body:JSON.stringify({allowed_ips:rulesPeerIp,ipt_rules:currentRules})});
+    const fmt=(cmds,cls)=>cmds.split(';').map(c=>c.trim()).filter(Boolean).map(c=>`<span class="${cls}">${esc(c)}</span>`).join('\n');
+    el.innerHTML=`<span class="cmd-comment"># PostUp</span>\n`+fmt(res.post_up||'','cmd-up')+(res.post_down?`\n\n<span class="cmd-comment"># PostDown</span>\n`+fmt(res.post_down,'cmd-down'):'');
+  }catch(e){el.innerHTML=`<span class="cmd-empty">Preview unavailable</span>`;}
+}
+async function saveRules(){
+  const aipsInput = document.getElementById('rules-peer-allowed-ips');
+  const extraRoutes = aipsInput ? aipsInput.value.trim() : '';
+  // Always prepend the peer's own /32, then append extra routes
+  const routeParts = [rulesPeerIp];
+  if (extraRoutes) extraRoutes.split(',').map(s => s.trim()).filter(Boolean).forEach(r => {
+    if (r !== rulesPeerIp) routeParts.push(r);
+  });
+  const newAllowedIps = routeParts.join(', ');
+  try{
+    await apiFetch(`/api/${activeIface}/peers/${encodeURIComponent(rulesPeerKey)}/rules`,{
+      method:'PUT',
+      body:JSON.stringify({
+        allowed_ips:     rulesPeerIp,
+        new_allowed_ips: newAllowedIps,
+        ipt_rules:       currentRules
+      })
+    });
+    toast('Firewall rules saved.','success');
+    closeModal('modal-rules');
+    refreshActiveIface();
+  }catch(e){toast(e.message,'error');}
+}
+
+// ─── Rule helpers ───
+function ruleIcon(t){return{port:'🔌',destination:'🎯',internet:'🌐',ratelimit:'⏱',nomasq:'🔀'}[t]||'📋';}
+function ruleTitle(r){
+  if(r.type==='port')return`Port ${r.port||'any'} — ${r.proto==='both'?'TCP+UDP':(r.proto||'TCP').toUpperCase()}`;
+  if(r.type==='destination')return`Destination: ${r.dst_ip||'any'}`;
+  if(r.type==='internet')return'Internet access (all forward)';
+  if(r.type==='ratelimit')return'Bandwidth rate limit';
+  if(r.type==='nomasq')return`No MASQUERADE → ${r.out_iface||wanInterface}`;
+  return r.type;
+}
+function ruleSub(r){
+  if(r.type==='ratelimit'){const p=[];if(r.kbps_dl)p.push(`↓ ${r.kbps_dl} KB/s`);if(r.kbps_ul)p.push(`↑ ${r.kbps_ul} KB/s`);return p.join(' · ');}
+  if(r.type==='nomasq')return`Add static route to ${rulesPeerIp||'peer IP'} on upstream device`;
+  return'';
+}
+
+// ═══ Misc helpers ═══
+function statusDot(p){
+  if(!p.enabled)return`<div class="status-dot"><div class="dot disabled"></div><span style="color:var(--text3);font-size:11px">Disabled</span></div>`;
+  return`<div class="status-dot"><div class="dot ${p.online?'online':'offline'}"></div><span style="color:${p.online?'var(--green)':'var(--text2)'};font-size:11px">${p.online?'Online':'Offline'}</span></div>`;
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function fmtBytes(b){if(!b)return'0 B';const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<4){b/=1024;i++;}return b.toFixed(1)+' '+u[i];}
+function fmtHS(ts){
+  if(!ts)return`<span style="color:var(--text3)">Never</span>`;
+  const d=Math.floor(Date.now()/1000)-ts;
+  if(d<60)return`<span style="color:var(--green)">${d}s ago</span>`;
+  if(d<3600)return`<span style="color:var(--yellow)">${Math.floor(d/60)}m ago</span>`;
+  if(d<86400)return`<span style="color:var(--text2)">${Math.floor(d/3600)}h ago</span>`;
+  return`<span style="color:var(--text3)">${Math.floor(d/86400)}d ago</span>`;
+}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-bg').forEach(bg=>bg.addEventListener('click',e=>{if(e.target===bg)bg.classList.remove('open');}));
+function toast(msg,type='info'){
+  const w=document.getElementById('toast-wrap'),el=document.createElement('div');
+  el.className=`toast ${type}`;
+  el.innerHTML=`<span style="color:${type==='success'?'var(--green)':type==='error'?'var(--red)':'var(--blue)'};font-weight:700">${{success:'✓',error:'✕',info:'ℹ'}[type]||'•'}</span><span>${esc(msg)}</span>`;
+  w.appendChild(el);setTimeout(()=>el.remove(),4200);
+}
+</script>
+
+<!-- ═══ Login overlay ═══ -->
+
+<div class="login-wrap" id="login-wrap">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="6" fill="#00e676"/>
+        <polygon points="14,4 22,9 22,19 14,24 6,19 6,9" fill="#0b0e0f"/>
+        <circle cx="14" cy="14" r="3.5" fill="#00e676"/>
+      </svg>
+      <div>
+        <div class="login-title">WireGuard Manager</div>
+        <div class="login-sub">VPN Control</div>
+      </div>
+    </div>
+    <div class="form-group"><label>Username</label><input id="login-user" type="text" placeholder="username" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"/></div>
+    <div class="form-group"><label>Password</label><input id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+    <div class="login-error" id="login-error"></div>
+    <button class="btn btn-primary" style="width:100%;margin-top:4px;justify-content:center" onclick="doLogin()" id="login-btn">Sign In</button>
+  </div>
+</div>
+
+
+<script>
+var _netRaf = null;
+
+function stopNetCanvas() {
+  if (_netRaf) { cancelAnimationFrame(_netRaf); _netRaf = null; }
+}
+
+var _dashRaf = null;
+
+function stopDashCanvas() {
+  if (_dashRaf) { cancelAnimationFrame(_dashRaf); _dashRaf = null; }
+}
+
+function startDashCanvas() {
+  stopDashCanvas();
+  var cv = document.getElementById('dash-canvas');
+  if (!cv) return;
+  var ctx = cv.getContext('2d');
+  var W, H, nodes;
+  var G        = '0,230,118';
+  var COUNT    = 55;
+  var MAXDIST  = 160;
+  var SPEED    = 0.18;
+
+  function resize() {
+    W = cv.width  = window.innerWidth;
+    H = cv.height = window.innerHeight;
+    buildNodes();
+  }
+
+  function buildNodes() {
+    nodes = [];
+    for (var i = 0; i < COUNT; i++) {
+      var ang = Math.random() * Math.PI * 2;
+      var spd = SPEED * (0.4 + Math.random() * 0.8);
+      nodes.push({
+        x:  Math.random() * W,
+        y:  Math.random() * H,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        r:  1 + Math.random() * 1.8,
+        pulse: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function draw() {
+    if (!cv || cv.style.display === 'none') { _dashRaf = null; return; }
+
+    ctx.fillStyle = 'rgba(11,14,15,0.25)';
+    ctx.fillRect(0, 0, W, H);
+
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      n.x += n.vx; n.y += n.vy;
+      n.pulse += 0.02;
+      if (n.x < 0)  { n.x = 0;  n.vx *= -1; }
+      if (n.x > W)  { n.x = W;  n.vx *= -1; }
+      if (n.y < 0)  { n.y = 0;  n.vy *= -1; }
+      if (n.y > H)  { n.y = H;  n.vy *= -1; }
+    }
+
+    for (var i = 0; i < nodes.length; i++) {
+      for (var j = i + 1; j < nodes.length; j++) {
+        var dx = nodes[i].x - nodes[j].x;
+        var dy = nodes[i].y - nodes[j].y;
+        var d  = dx*dx + dy*dy;
+        if (d < MAXDIST * MAXDIST) {
+          var dist  = Math.sqrt(d);
+          var alpha = (1 - dist / MAXDIST) * 0.12;
+          ctx.beginPath();
+          ctx.moveTo(nodes[i].x, nodes[i].y);
+          ctx.lineTo(nodes[j].x, nodes[j].y);
+          ctx.strokeStyle = 'rgba(' + G + ',' + alpha + ')';
+          ctx.lineWidth   = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+
+    for (var i = 0; i < nodes.length; i++) {
+      var n    = nodes[i];
+      var glow = 0.5 + 0.25 * Math.sin(n.pulse);
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r * 2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(' + G + ',' + (glow * 0.04) + ')';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(' + G + ',' + (glow * 0.35) + ')';
+      ctx.fill();
+    }
+
+    _dashRaf = requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  draw();
+}
+
+function startNetCanvas() {
+  stopNetCanvas();
+  var cv  = document.getElementById('net-canvas');
+  if (!cv) return;
+  var ctx = cv.getContext('2d');
+  var W, H, nodes;
+  var G        = '0,230,118';
+  var COUNT    = 80;
+  var MAXDIST  = 150;
+  var SPEED    = 0.3;
+
+  function resize() {
+    W = cv.width  = window.innerWidth;
+    H = cv.height = window.innerHeight;
+    buildNodes();
+  }
+
+  function buildNodes() {
+    nodes = [];
+    for (var i = 0; i < COUNT; i++) {
+      var ang = Math.random() * Math.PI * 2;
+      var spd = SPEED * (0.4 + Math.random() * 0.8);
+      nodes.push({
+        x:  Math.random() * W,
+        y:  Math.random() * H,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        r:  1 + Math.random() * 2.5,
+        pulse: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function draw() {
+    if (!cv || cv.style.display === 'none') { _netRaf = null; return; }
+
+    ctx.fillStyle = 'rgba(11,14,15,0.18)';
+    ctx.fillRect(0, 0, W, H);
+
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      n.x += n.vx; n.y += n.vy;
+      n.pulse += 0.03;
+      if (n.x < 0)  { n.x = 0;  n.vx *= -1; }
+      if (n.x > W)  { n.x = W;  n.vx *= -1; }
+      if (n.y < 0)  { n.y = 0;  n.vy *= -1; }
+      if (n.y > H)  { n.y = H;  n.vy *= -1; }
+    }
+
+    // Edges
+    for (var i = 0; i < nodes.length; i++) {
+      for (var j = i + 1; j < nodes.length; j++) {
+        var dx = nodes[i].x - nodes[j].x;
+        var dy = nodes[i].y - nodes[j].y;
+        var d  = dx*dx + dy*dy;
+        if (d < MAXDIST * MAXDIST) {
+          var dist  = Math.sqrt(d);
+          var alpha = (1 - dist / MAXDIST) * 0.35;
+          ctx.beginPath();
+          ctx.moveTo(nodes[i].x, nodes[i].y);
+          ctx.lineTo(nodes[j].x, nodes[j].y);
+          ctx.strokeStyle = 'rgba(' + G + ',' + alpha + ')';
+          ctx.lineWidth   = 0.6;
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Nodes — glow + core
+    for (var i = 0; i < nodes.length; i++) {
+      var n    = nodes[i];
+      var glow = 0.5 + 0.25 * Math.sin(n.pulse);
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r * 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(' + G + ',' + (glow * 0.08) + ')';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(' + G + ',' + (glow * 0.9) + ')';
+      ctx.fill();
+    }
+
+    _netRaf = requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  draw();
+}
+</script>
+</body>
+</html>

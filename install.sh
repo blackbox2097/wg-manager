@@ -10,7 +10,7 @@
 
 set -e
 
-REPO="blackbox2097/wg-manager"
+REPO="YOUR_USERNAME/wg-manager"
 BRANCH="main"
 RAW_BASE="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 

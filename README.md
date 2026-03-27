@@ -53,6 +53,42 @@ lxc list wg-manager
 
 ---
 
+
+## Proxmox LXC
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/wg-manager/main/proxmox-deploy.sh)
+```
+
+Skripta automatski:
+- Bira slobodan CT ID
+- Preuzima Ubuntu 22.04 template ako nije prisutan
+- Kreira kontejner sa potrebnim WireGuard privilegijama
+- Pokreće `install.sh` unutar kontejnera
+
+### Opcije (env varijable)
+
+```bash
+CT_ID=210 CT_STORAGE=local-lvm CT_IP=192.168.1.50/24 CT_GW=192.168.1.1 \
+  bash <(curl -fsSL .../proxmox-deploy.sh)
+```
+
+| Varijabla | Default | Opis |
+|-----------|---------|------|
+| `CT_ID` | auto | LXC ID |
+| `CT_HOSTNAME` | wg-manager | Hostname kontejnera |
+| `CT_STORAGE` | local-lvm | Proxmox storage |
+| `CT_DISK` | 4 | Disk u GB |
+| `CT_RAM` | 512 | RAM u MB |
+| `CT_BRIDGE` | vmbr0 | Mrežni bridge |
+| `CT_IP` | dhcp | IP adresa ili `dhcp` |
+| `CT_GW` | — | Gateway (za statički IP) |
+
+> **Note:** WireGuard kernel modul mora biti učitan na Proxmox hostu.
+> Kontejner dijeli host kernel.
+
+---
+
 ## Default credentials
 
 | Username | Password |

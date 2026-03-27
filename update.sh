@@ -7,7 +7,7 @@
 
 set -e
 
-REPO="YOUR_USERNAME/wg-manager"
+REPO="blackbox2097/wg-manager"
 BRANCH="main"
 RAW_BASE="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 INSTALL_DIR="/opt/wg-manager"

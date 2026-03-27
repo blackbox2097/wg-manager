@@ -9,7 +9,7 @@ Web-based admin panel for managing WireGuard VPN servers.
 ## Quick Install
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/wg-manager/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/blackbox2097/wg-manager/main/install.sh)
 ```
 
 Requires a Debian/Ubuntu host with root access.
@@ -26,7 +26,7 @@ WG_INTERFACE=wg1 WG_MANAGER_PORT=8080 bash <(curl -fsSL ...)
 ## Update
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/wg-manager/main/update.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/blackbox2097/wg-manager/main/update.sh)
 ```
 
 ---
@@ -42,7 +42,7 @@ lxc launch ubuntu:22.04 wg-manager
 
 # 3. Run installer inside container
 lxc exec wg-manager -- bash -c \
-  "bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/wg-manager/main/install.sh)"
+  "bash <(curl -fsSL https://raw.githubusercontent.com/blackbox2097/wg-manager/main/install.sh)"
 
 # 4. Get container IP
 lxc list wg-manager
@@ -57,7 +57,7 @@ lxc list wg-manager
 ## Proxmox LXC
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/wg-manager/main/proxmox-deploy.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/blackbox2097/wg-manager/main/proxmox-deploy.sh)
 ```
 
 Skripta automatski:

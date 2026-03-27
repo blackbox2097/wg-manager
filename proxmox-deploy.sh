@@ -3,7 +3,7 @@
 # Run on Proxmox host as root:
 #   bash proxmox-deploy.sh
 # Or pull directly from GitHub:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/wg-manager/main/proxmox-deploy.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/blackbox2097/wg-manager/main/proxmox-deploy.sh)
 
 set -e
 
@@ -22,7 +22,7 @@ CT_BRIDGE="${CT_BRIDGE:-vmbr0}"           # network bridge
 CT_IP="${CT_IP:-}"                        # "dhcp" or "192.168.1.50/24" — prompted if empty
 CT_GW="${CT_GW:-}"                        # gateway — only needed for static IP
 
-REPO="${REPO:-YOUR_USERNAME/wg-manager}"
+REPO="${REPO:-blackbox2097/wg-manager}"
 BRANCH="${BRANCH:-main}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
 TEMPLATE_NAME=""                          # auto-detected

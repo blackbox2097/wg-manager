@@ -3,11 +3,11 @@
 # Downloads latest app.py and index.html from GitHub, restarts service
 #
 # Usage:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/wg-manager/main/update.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/blackbox2097/wg-manager/main/update.sh)
 
 set -e
 
-REPO="YOUR_USERNAME/wg-manager"
+REPO="blackbox2097/wg-manager"
 BRANCH="main"
 RAW_BASE="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 INSTALL_DIR="/opt/wg-manager"

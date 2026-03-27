@@ -3,14 +3,14 @@
 # Pulls latest files directly from GitHub
 #
 # Quick install:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/wg-manager/main/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/blackbox2097/wg-manager/main/install.sh)
 #
 # With options:
 #   WG_INTERFACE=wg1 WG_MANAGER_PORT=8080 bash <(curl -fsSL ...)
 
 set -e
 
-REPO="YOUR_USERNAME/wg-manager"
+REPO="blackbox2097/wg-manager"
 BRANCH="main"
 RAW_BASE="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 

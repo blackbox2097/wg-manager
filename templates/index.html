@@ -2101,7 +2101,7 @@ function openCreateInterface() {
   document.getElementById('ci-alias').value='';
   document.getElementById('ci-addr').value=`10.${n}.0.1/24`;
   document.getElementById('ci-port').value=String(51820+n);
-  document.getElementById('ci-dns').value='';
+  const ciDns = document.getElementById('ci-dns'); if(ciDns) ciDns.value='';
   document.getElementById('ci-postup').value='';
   document.getElementById('ci-postdown').value='';
   openModal('modal-create-iface');

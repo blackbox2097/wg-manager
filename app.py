@@ -883,67 +883,81 @@ def api_config():
     })
 
 # ════════════════════════════════════════════════════════════════════════════
-# API — Static Routes
+# API — Interface Log
 # ════════════════════════════════════════════════════════════════════════════
 
-ROUTES_META_PATH    = os.path.join(META_DIR, 'wg-manager-routes.json')
-ROUTES_SERVICE_PATH = '/etc/systemd/system/wg-manager-routes.service'
+@app.route('/api/<iface>/log')
+@require_auth
+def api_iface_log(iface):
+    import time as _time
+    n      = min(int(request.args.get('lines', 100)), 1000)
+    source = request.args.get('source', 'all').strip()
+    parts  = []
 
-def load_managed_routes():
-    try:
-        if os.path.exists(ROUTES_META_PATH):
-            return json.load(open(ROUTES_META_PATH))
-    except Exception:
-        pass
-    return []
+    if source in ('all', 'wg-quick'):
+        out, _, _ = run_cmd(
+            'journalctl -u wg-quick@' + iface + ' -n ' + str(n) +
+            ' --no-pager --output=short-iso 2>/dev/null',
+            check=False
+        )
+        if out.strip():
+            parts.append('-- Interface events (wg-quick@' + iface + ') --' + chr(10) + out.strip())
 
-def save_managed_routes(routes):
-    with open(ROUTES_META_PATH, 'w') as f:
-        json.dump(routes, f, indent=2)
-    _sync_routes_service(routes)
+    if source in ('all', 'kernel'):
+        out, _, _ = run_cmd(
+            'journalctl -k --no-pager --output=short-iso 2>/dev/null'
+            ' | grep -iE "wireguard|' + iface + '" | tail -' + str(n),
+            check=False
+        )
+        if out.strip():
+            parts.append('-- WireGuard kernel --' + chr(10) + out.strip())
 
-def _route_cmd(r, action='add'):
-    cmd = f'ip route {action} {r["dst"]}'
-    if r.get('via'):    cmd += f' via {r["via"]}'
-    if r.get('dev'):    cmd += f' dev {r["dev"]}'
-    if r.get('metric'): cmd += f' metric {r["metric"]}'
-    return cmd
+    if source in ('all', 'peers'):
+        wg_out, _, _ = run_cmd('wg show ' + iface + ' dump', check=False)
+        peer_lines = []
+        meta = load_meta(iface)
+        now  = int(_time.time())
 
-def _sync_routes_service(routes):
-    """Write/update systemd oneshot service for persistent routes. Remove if none persist."""
-    persistent = [r for r in routes if r.get('persist')]
-    if not persistent:
-        # Remove service if it exists
-        if os.path.exists(ROUTES_SERVICE_PATH):
-            run_cmd('systemctl disable wg-manager-routes 2>/dev/null; rm -f ' + ROUTES_SERVICE_PATH, check=False)
-            run_cmd('systemctl daemon-reload', check=False)
-        return
+        for line in wg_out.strip().splitlines()[1:]:
+            cols = line.split(chr(9))
+            if len(cols) < 8:
+                continue
+            pubkey   = cols[0]
+            endpoint = cols[2] if cols[2] != '(none)' else 'no endpoint'
+            lhs      = int(cols[4]) if cols[4] != '0' else 0
+            rx, tx   = int(cols[5]), int(cols[6])
+            pm       = meta.get(pubkey, {})
+            name     = pm.get('name') or (pubkey[:20] + '...')
 
-    def _exec_line(r):
-        cmd = 'ExecStart=/sbin/ip route replace ' + r['dst']
-        if r.get('via'):    cmd += ' via '    + r['via']
-        if r.get('dev'):    cmd += ' dev '    + r['dev']
-        if r.get('metric'): cmd += ' metric ' + r['metric']
-        return cmd
-    exec_lines = chr(10).join(_exec_line(r) for r in persistent)
+            if lhs:
+                delta = now - lhs
+                if delta < 60:      age = str(delta) + 's ago'
+                elif delta < 3600:  age = str(delta // 60) + 'm ago'
+                elif delta < 86400: age = str(delta // 3600) + 'h ago'
+                else:               age = str(delta // 86400) + 'd ago'
+                status = 'ONLINE' if delta < 180 else 'OFFLINE'
+            else:
+                age, status = 'never', 'NEVER CONNECTED'
 
-    service = f"""[Unit]
-Description=WireGuard Manager — Persistent Static Routes
-After=network.target
-Wants=network.target
+            peer_lines.append(
+                '[' + status + '] ' + name + chr(10) +
+                '  endpoint:  ' + endpoint + chr(10) +
+                '  handshake: ' + age + chr(10) +
+                '  transfer:  rx=' + fmt_bytes(rx) + '  tx=' + fmt_bytes(tx)
+            )
 
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-{exec_lines}
+        kern_out, _, _ = run_cmd(
+            'journalctl -k --no-pager --output=short-iso 2>/dev/null'
+            ' | grep -i "handshake" | grep -i "' + iface + '" | tail -' + str(n),
+            check=False
+        )
+        if peer_lines:
+            parts.append('-- Peer status --' + chr(10) + (chr(10) + chr(10)).join(peer_lines))
+        if kern_out.strip():
+            parts.append('-- Kernel handshake events --' + chr(10) + kern_out.strip())
 
-[Install]
-WantedBy=multi-user.target
-"""
-    with open(ROUTES_SERVICE_PATH, 'w') as f:
-        f.write(service)
-    run_cmd('systemctl daemon-reload', check=False)
-    run_cmd('systemctl enable wg-manager-routes', check=False)
+    output = (chr(10) + chr(10)).join(parts) if parts else ('No log entries found for ' + iface + '.')
+    return jsonify({'output': output})
 
 
 @app.route('/api/routes')
@@ -1169,13 +1183,19 @@ def api_create_interface():
 @app.route('/api/interfaces/<iface>/up', methods=['POST'])
 @require_role('admin', 'operator')
 def api_interface_up(iface):
-    try: run_cmd(f'wg-quick up {iface}'); return jsonify({'success': True})
+    try:
+        run_cmd(f'wg-quick up {iface}')
+        run_cmd(f'systemctl enable wg-quick@{iface}', check=False)
+        return jsonify({'success': True})
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/api/interfaces/<iface>/down', methods=['POST'])
 @require_role('admin')
 def api_interface_down(iface):
-    try: run_cmd(f'wg-quick down {iface}'); return jsonify({'success': True})
+    try:
+        run_cmd(f'wg-quick down {iface}')
+        run_cmd(f'systemctl disable wg-quick@{iface}', check=False)
+        return jsonify({'success': True})
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/api/interfaces/<iface>/restart', methods=['POST'])
@@ -1191,8 +1211,10 @@ def api_interface_toggle(iface):
     _, _, rc = run_cmd(f'ip link show {iface}', check=False)
     if rc == 0:
         run_cmd(f'wg-quick down {iface}', check=False)
+        run_cmd(f'systemctl disable wg-quick@{iface}', check=False)
         return jsonify({'success': True, 'up': False, 'message': f'{iface} down.'})
     run_cmd(f'wg-quick up {iface}', check=False)
+    run_cmd(f'systemctl enable wg-quick@{iface}', check=False)
     return jsonify({'success': True, 'up': True, 'message': f'{iface} up.'})
 
 @app.route('/api/interfaces/<iface>/delete', methods=['POST'])
@@ -1201,6 +1223,7 @@ def api_delete_interface(iface):
     if not re.match(r'^wg\d+$', iface):
         return jsonify({'error': 'Invalid interface name'}), 400
     run_cmd(f'wg-quick down {iface}', check=False)
+    run_cmd(f'systemctl disable wg-quick@{iface}', check=False)
     for p in [conf_path(iface), meta_path(iface)]:
         if os.path.exists(p): os.remove(p)
     return jsonify({'success': True})
@@ -1968,6 +1991,9 @@ def traffic_sampler():
                       if re.match(r'^wg\d+\.conf$', f)]
         except Exception:
             ifaces = []
+        # Also sample the WAN interface for dashboard graph
+        if WAN_INTERFACE and WAN_INTERFACE not in ifaces:
+            ifaces.append(WAN_INTERFACE)
 
         now = int(time.time())
 

@@ -454,6 +454,10 @@ select option{background:var(--bg3)}
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="13" height="13"><circle cx="8" cy="8" r="6"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2"/></svg>
       Interface Config
     </button>
+    <button class="iface-tab" id="tab-log" onclick="switchView('log',this)">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="13" height="13"><path d="M2 2h12v12H2z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>
+      Log
+    </button>
   </div>
 
   <div class="content">
@@ -466,6 +470,23 @@ select option{background:var(--bg3)}
         <div class="stat-card yellow"><div class="stat-label">Total ↓ Received</div><div class="stat-value" id="st-total-rx" style="font-size:20px;padding-top:4px">—</div><div class="stat-sub">all interfaces</div></div>
         <div class="stat-card red"><div class="stat-label">Total ↑ Sent</div><div class="stat-value" id="st-total-tx" style="font-size:20px;padding-top:4px">—</div><div class="stat-sub">all interfaces</div></div>
       </div>
+      <!-- WAN throughput graph -->
+      <div style="margin-bottom:22px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text2);font-family:var(--font-ui);font-weight:700">WAN Throughput — <span id="dash-wan-label" style="color:var(--blue)">—</span></div>
+          <div style="flex:1"></div>
+          <span style="font-size:10px;color:var(--green)">■</span><span style="font-size:10px;color:var(--text2);margin-right:8px"> RX</span>
+          <span style="font-size:10px;color:var(--yellow)">■</span><span style="font-size:10px;color:var(--text2)"> TX</span>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px">
+          <canvas id="dash-wan-canvas" style="width:100%;height:120px;display:block"></canvas>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--text2)">
+          <span>RX: <span id="dash-wan-rx" style="color:var(--green)">—</span></span>
+          <span>TX: <span id="dash-wan-tx" style="color:var(--yellow)">—</span></span>
+        </div>
+      </div>
+
       <div class="section-header">
         <div class="section-title">Interfaces</div>
         <div class="section-sep"></div>
@@ -592,6 +613,42 @@ select option{background:var(--bg3)}
     </div>
 
     <!-- ── Backup / Restore ── -->
+    <!-- ── Log ── -->
+    <div class="view" id="view-log">
+      <div class="section-header">
+        <div class="section-title" id="log-title">Log</div>
+        <div class="section-sep"></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="font-size:11px;color:var(--text2);text-transform:none;letter-spacing:0">Lines:</label>
+          <select id="log-lines" onchange="loadLog()" style="width:auto;padding:4px 8px;font-size:11px">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+          </select>
+          <label style="font-size:11px;color:var(--text2);text-transform:none;letter-spacing:0;margin-left:6px">Source:</label>
+          <select id="log-source" onchange="loadLog()" style="width:auto;padding:4px 8px;font-size:11px">
+            <option value="all">All</option>
+            <option value="wg-quick">Interface (wg-quick)</option>
+            <option value="kernel">WireGuard Kernel</option>
+            <option value="peers">Peer Handshakes</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadLog()">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="12" height="12"><path d="M13.5 2.5A7 7 0 1 1 2.5 8"/><path d="M13.5 2.5V6h-3.5"/></svg>
+            Refresh
+          </button>
+          <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);cursor:pointer">
+            <input type="checkbox" id="log-follow" style="accent-color:var(--green)" onchange="toggleLogFollow()"/>
+            Follow
+          </label>
+        </div>
+      </div>
+
+      <div class="fw-script-box" style="border-radius:var(--radius);margin-top:4px">
+        <pre id="log-output" style="max-height:calc(100vh - 260px);overflow-y:auto;white-space:pre;padding:12px;color:var(--text2);font-size:10.5px;line-height:1.6">Loading…</pre>
+      </div>
+    </div>
+
     <div class="view" id="view-backup">
       <div class="section-header">
         <div class="section-title">Backup & Restore</div>
@@ -1813,6 +1870,10 @@ function startApp() {
     if (cfg.server_public_ip) serverPublicIp = cfg.server_public_ip;
     const banner = document.getElementById('fwd-banner');
     if (banner) banner.style.display = cfg.ip_forwarding === false ? 'flex' : 'none';
+    // Start WAN graph if on dashboard
+    if (document.getElementById('view-dashboard').classList.contains('active')) {
+      startWanGraph();
+    }
   }).catch(() => {});
   refresh();
   setInterval(refresh, 20000);
@@ -1960,7 +2021,7 @@ async function selectInterface(name) {
 
 
 // ═══ Nav ═══
-const viewTitles = {dashboard:'Dashboard',peers:'Peers',rules:'Firewall Rules',traffic:'Traffic',interface:'Interface Config',users:'User Management',backup:'Backup & Restore',routes:'Static Routes'};
+const viewTitles = {dashboard:'Dashboard',peers:'Peers',rules:'Firewall Rules',traffic:'Traffic',interface:'Interface Config',log:'Interface Log',users:'User Management',backup:'Backup & Restore',routes:'Static Routes'};
 function switchView(name, el) {
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -1981,25 +2042,147 @@ function switchView(name, el) {
     document.querySelectorAll('.nav-item')[0].classList.add('active');
     document.getElementById('dash-canvas').style.display = 'block';
     startDashCanvas();
+    startWanGraph();
   } else {
     stopDashCanvas();
+    stopWanGraph();
     document.getElementById('dash-canvas').style.display = 'none';
   }
   // Hide tabbar for non-interface views
-  const ifaceViews = ['peers','rules','traffic','interface'];
+  const ifaceViews = ['peers','rules','traffic','interface','log'];
   document.getElementById('iface-tabbar').style.display = ifaceViews.includes(name) ? 'flex' : 'none';
 
   if (name==='users')     loadUsers();
   if (name==='backup')    loadBackupManifest();
   if (name==='routes')    loadRoutes();
+  if (name==='log')       initLogView();
+  if (name!=='log')       stopLogFollow();
   if (name==='traffic')   initTrafficView();
   if (name==='interface') refreshActiveIface();
 
   // Sync tab bar active state
-  ['peers','rules','traffic','interface'].forEach(t => {
+  ['peers','rules','traffic','interface','log'].forEach(t => {
     const tab = document.getElementById('tab-'+t);
     if (tab) tab.classList.toggle('active', t === name);
   });
+}
+
+// ═══ WAN Dashboard Graph ═══
+let wanGraphTimer = null;
+
+function startWanGraph() {
+  document.getElementById('dash-wan-label').textContent = wanInterface;
+  loadWanGraph();
+  if (wanGraphTimer) clearInterval(wanGraphTimer);
+  wanGraphTimer = setInterval(loadWanGraph, 10000);
+}
+
+function stopWanGraph() {
+  if (wanGraphTimer) { clearInterval(wanGraphTimer); wanGraphTimer = null; }
+}
+
+async function loadWanGraph() {
+  if (!wanInterface) return;
+  try {
+    const [hist, live] = await Promise.all([
+      apiFetch('/api/' + wanInterface + '/traffic/history?minutes=30'),
+      apiFetch('/api/' + wanInterface + '/traffic/live'),
+    ]);
+    drawWanChart(hist);
+    document.getElementById('dash-wan-rx').textContent = live.rx_human || '—';
+    document.getElementById('dash-wan-tx').textContent = live.tx_human || '—';
+  } catch(e) {}
+}
+
+function drawWanChart(data) {
+  const canvas = document.getElementById('dash-wan-canvas');
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const dpr  = window.devicePixelRatio || 1;
+  const W    = (rect.width  || 700) * dpr;
+  const H    = (rect.height || 120) * dpr;
+  canvas.width  = W;
+  canvas.height = H;
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const PAD_L = 50 * dpr;
+  const PAD_R = 10 * dpr;
+  const PAD_T = 8  * dpr;
+  const PAD_B = 22 * dpr;
+  const CW    = W - PAD_L - PAD_R;
+  const CH    = H - PAD_T - PAD_B;
+
+  const style  = getComputedStyle(document.documentElement);
+  const C_GRID = style.getPropertyValue('--border').trim()  || '#1f2830';
+  const C_TEXT = style.getPropertyValue('--text2').trim()   || '#6b808f';
+  const C_RX   = '#00e676';
+  const C_TX   = '#ffd166';
+
+  const now    = Math.floor(Date.now() / 1000);
+  const tStart = now - 30 * 60;
+  const tEnd   = now;
+
+  if (!data || !data.length) {
+    ctx.fillStyle = C_TEXT;
+    ctx.font = (10 * dpr) + 'px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Collecting data…', W / 2, H / 2);
+    return;
+  }
+
+  const maxVal  = Math.max(...data.map(d => Math.max(d.rx, d.tx)), 1024);
+  const niceMax = niceNumber(maxVal * 1.1);
+
+  // Grid + Y labels
+  ctx.setLineDash([3 * dpr, 4 * dpr]);
+  for (let i = 0; i <= 4; i++) {
+    const y = PAD_T + CH - (i / 4) * CH;
+    ctx.strokeStyle = C_GRID; ctx.lineWidth = dpr;
+    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(PAD_L + CW, y); ctx.stroke();
+    ctx.fillStyle = C_TEXT;
+    ctx.font = (9 * dpr) + 'px JetBrains Mono, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtBps(niceMax * i / 4), PAD_L - 4 * dpr, y + 3 * dpr);
+  }
+  ctx.setLineDash([]);
+
+  function plotLine(series, color) {
+    if (!series.length) return;
+    ctx.beginPath();
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5 * dpr; ctx.lineJoin = 'round';
+    let first = true;
+    for (const pt of series) {
+      const x = PAD_L + ((pt.ts - tStart) / (tEnd - tStart)) * CW;
+      const y = PAD_T + CH - (pt.v / niceMax) * CH;
+      if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 0.07; ctx.fillStyle = color;
+    const last = series[series.length - 1];
+    ctx.lineTo(PAD_L + ((last.ts - tStart) / (tEnd - tStart)) * CW, PAD_T + CH);
+    ctx.lineTo(PAD_L + ((series[0].ts - tStart) / (tEnd - tStart)) * CW, PAD_T + CH);
+    ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+  }
+
+  plotLine(data.map(d => ({ts: d.ts, v: d.tx})), C_TX);
+  plotLine(data.map(d => ({ts: d.ts, v: d.rx})), C_RX);
+
+  // X labels
+  const labelCount = Math.min(5, Math.floor(CW / (55 * dpr)));
+  ctx.fillStyle = C_TEXT;
+  ctx.font = (9 * dpr) + 'px JetBrains Mono, monospace';
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= labelCount; i++) {
+    const t = tStart + (i / labelCount) * (tEnd - tStart);
+    const x = PAD_L + (i / labelCount) * CW;
+    const d = new Date(t * 1000);
+    ctx.fillText(
+      d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0'),
+      x, PAD_T + CH + 14 * dpr
+    );
+  }
 }
 
 // ═══ Dashboard ═══
@@ -2634,6 +2817,49 @@ function downloadConf() {
   a.href = URL.createObjectURL(new Blob([clientConfData], {type:'text/plain'}));
   a.download = clientConfName + '.conf';
   a.click();
+}
+
+// ═══ Interface Log ═══
+let logFollowTimer = null;
+
+function initLogView() {
+  const ifc = allInterfaces.find(i => i.name === activeIface);
+  const name = (ifc && ifc.alias) ? ifc.alias : activeIface;
+  document.getElementById('log-title').textContent = 'Log — ' + name;
+  document.getElementById('log-follow').checked = false;
+  stopLogFollow();
+  loadLog();
+}
+
+async function loadLog() {
+  if (!activeIface) return;
+  const lines  = document.getElementById('log-lines').value  || '100';
+  const source = document.getElementById('log-source').value || 'all';
+  const pre    = document.getElementById('log-output');
+  try {
+    const d = await apiFetch(
+      `/api/${activeIface}/log?lines=${lines}&source=${encodeURIComponent(source)}`
+    );
+    pre.textContent = d.output || '(no entries)';
+    // Auto-scroll to bottom
+    pre.scrollTop = pre.scrollHeight;
+  } catch(e) {
+    pre.textContent = 'Error: ' + e.message;
+  }
+}
+
+function toggleLogFollow() {
+  const checked = document.getElementById('log-follow').checked;
+  if (checked) {
+    loadLog();
+    logFollowTimer = setInterval(loadLog, 3000);
+  } else {
+    stopLogFollow();
+  }
+}
+
+function stopLogFollow() {
+  if (logFollowTimer) { clearInterval(logFollowTimer); logFollowTimer = null; }
 }
 
 // ═══ Static Routes ═══

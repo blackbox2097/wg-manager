@@ -71,8 +71,7 @@ echo "  CT ID: $CT_ID"
 if [[ -z "$CT_STORAGE" ]]; then
   echo ""
   echo "Available storages:"
-  pvesm status 2>/dev/null | awk 'NR>1 {printf "  %-20s %s
-", $1, $2}' || echo "  (could not list storages)"
+  pvesm status 2>/dev/null | awk 'NR>1 {print "  " $1 "\t" $2}' || echo "  (could not list storages)"
   echo -n "→ Storage [default: local]: "
   read -r INPUT_STORAGE
   CT_STORAGE="${INPUT_STORAGE:-local}"

@@ -1708,10 +1708,18 @@ def api_backup():
         except Exception as e:
             app.logger.warning(f'Backup: error reading WG_DIR: {e}')
 
-        # wg-manager-wgN.json metadata files
+        # All wg-manager metadata files:
+        #   wg-manager-wgN.json          — peer metadata + firewall rules
+        #   wg-manager-wgN-iface.json    — interface alias, external port
+        #   wg-manager-wgN-postup.sh     — generated firewall PostUp script
+        #   wg-manager-wgN-postdown.sh   — generated firewall PostDown script
+        #   wg-manager-routes.json       — managed static routes
+        META_PATTERNS = re.compile(
+            r'^wg-manager((-wg\d+(-iface|-postup|-postdown)?)|(-routes))\.(?:json|sh)$'
+        )
         try:
             for fname in sorted(os.listdir(META_DIR)):
-                if re.match(r'^wg-manager-wg\d+\.json$', fname):
+                if META_PATTERNS.match(fname):
                     full = os.path.join(META_DIR, fname)
                     data = open(full, 'rb').read()
                     zf.writestr(f'metadata/{fname}', data)
@@ -1823,15 +1831,17 @@ def api_restore():
                         except Exception as e:
                             errors.append(f'{fname}: {e}')
 
-            # Restore metadata JSON
+            # Restore metadata (JSON + shell scripts)
             if restore_meta:
                 for name in names:
-                    if name.startswith('metadata/') and name.endswith('.json'):
+                    if name.startswith('metadata/') and (name.endswith('.json') or name.endswith('.sh')):
                         fname = os.path.basename(name)
                         dest  = os.path.join(META_DIR, fname)
                         try:
                             with open(dest, 'wb') as out:
                                 out.write(zf.read(name))
+                            if fname.endswith('.sh'):
+                                os.chmod(dest, 0o750)
                             restored.append(fname)
                         except Exception as e:
                             errors.append(f'{fname}: {e}')

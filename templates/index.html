@@ -2742,7 +2742,8 @@ function rebuildConf() {
     let conf = '';
     conf += '[Interface]\n';
     conf += 'PrivateKey = ' + (d.private_key || '(private key)') + '\n';
-    conf += 'Address = '    + (d.allowed_ips  || '10.0.0.2/32')  + '\n';
+    const clientAddr1 = (d.allowed_ips || '10.0.0.2/32').split(',')[0].trim();
+  conf += 'Address = ' + clientAddr1 + '\n';
     if (dns) conf += 'DNS = ' + dns + '\n';
     conf += '\n[Peer]\n';
     conf += 'PublicKey = '           + (d.server_pubkey || '(server public key)') + '\n';
@@ -2810,7 +2811,8 @@ function rebuildConf() {
   let conf = '';
   conf += '[Interface]\n';
   conf += 'PrivateKey = ' + (d.private_key || '(private key)') + '\n';
-  conf += 'Address = '    + (d.allowed_ips  || '10.0.0.2/32')  + '\n';
+  const clientAddr = (d.allowed_ips || '10.0.0.2/32').split(',')[0].trim();
+  conf += 'Address = ' + clientAddr + '\n';
   if (dns) conf += 'DNS = ' + dns + '\n';
   if ((defaultRoute || routes.length) && (platform === 'windows' || platform === 'linux')) {
     conf += 'Table = off\n';
@@ -2900,7 +2902,7 @@ async function loadGeo() {
       const flag    = geo.countryCode
         ? String.fromCodePoint(...[...geo.countryCode.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0)))
         : '';
-      const country = geo.status === 'success' ? (flag + ' ' + (geo.country || '—')) : (geo.message || '—');
+      const country = geo.status === 'success' ? (flag + ' ' + esc(geo.country || '—')) : esc(geo.message || '—');
       const city    = geo.status === 'success' ? (geo.city || '—') : '—';
       const isp     = geo.status === 'success' ? (geo.org  || geo.isp || '—') : '—';
 
@@ -3138,7 +3140,7 @@ function renderRuleForm(){
   } else if(currentRuleType==='ratelimit'){
     box.innerHTML=`<div class="form-row"><div class="form-group"><label>Download cap <span class="hint">KB/s</span></label><input id="rf-dl" type="number" min="1" placeholder="e.g. 2048"/></div><div class="form-group"><label>Upload cap <span class="hint">KB/s</span></label><input id="rf-ul" type="number" min="1" placeholder="e.g. 512"/></div></div><div style="font-size:9.5px;color:var(--text3);margin-top:4px">Uses iptables <code style="color:var(--blue)">hashlimit</code>. Leave blank to skip that direction.</div>`;
   } else if(currentRuleType==='nomasq'){
-    box.innerHTML=`<div class="form-group"><label>Outbound interface <span class="hint">WAN — auto-detected</span></label><input id="rf-nomasq-iface" placeholder="eth0" value="${wanInterface}"/></div><div style="font-size:9.5px;color:var(--text3);margin-top:4px">Inserts <code style="color:var(--blue)">-j RETURN</code> in <code style="color:var(--blue)">nat/POSTROUTING</code> before global MASQUERADE.<br/>Peer exits with real VPN IP (<strong style="color:var(--text)">${rulesPeerIp}</strong>) as source.<br/>Add static route to this IP on upstream router/switch.</div>`;
+    box.innerHTML=`<div class="form-group"><label>Outbound interface <span class="hint">WAN — auto-detected</span></label><input id="rf-nomasq-iface" placeholder="eth0" value="${esc(wanInterface)}"/></div><div style="font-size:9.5px;color:var(--text3);margin-top:4px">Inserts <code style="color:var(--blue)">-j RETURN</code> in <code style="color:var(--blue)">nat/POSTROUTING</code> before global MASQUERADE.<br/>Peer exits with real VPN IP (<strong style="color:var(--text)">${esc(rulesPeerIp)}</strong>) as source.<br/>Add static route to this IP on upstream router/switch.</div>`;
   }
 }
 function setAction(action,el){currentAction=action;document.querySelectorAll('.action-pill').forEach(p=>p.classList.remove('sel'));el.classList.add('sel');}

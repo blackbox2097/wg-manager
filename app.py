@@ -136,6 +136,28 @@ def require_auth(fn):
         return fn(*args, **kwargs)
     return wrapper
 
+def validate_iface(fn):
+    """Decorator: validate iface URL parameter is a safe wgN name."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        iface = kwargs.get('iface', '')
+        if not re.match(r'^wg\d+$', iface):
+            return jsonify({'error': 'Invalid interface name'}), 400
+        return fn(*args, **kwargs)
+    return wrapper
+
+def validate_iface_or_wan(fn):
+    """Decorator: allow wgN interfaces AND the detected WAN interface (read-only endpoints)."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        iface = kwargs.get('iface', '')
+        if re.match(r'^wg\d+$', iface):
+            return fn(*args, **kwargs)
+        if iface == WAN_INTERFACE and re.match(r'^[a-zA-Z0-9._\-]+$', iface):
+            return fn(*args, **kwargs)
+        return jsonify({'error': 'Invalid interface name'}), 400
+    return wrapper
+
 def refresh_token_if_needed(response):
     """Silently refresh token on every authenticated request (sliding window)."""
     try:
@@ -268,6 +290,15 @@ def delete_peer_key(iface, pubkey):
 
 
 # ── Shell helper ──────────────────────────────────────────────────────────────
+
+def _validate_iface(iface):
+    """Raise ValueError if iface is not a safe wgN name."""
+    if not re.match(r'^wg\d+$', iface):
+        raise ValueError(f'Invalid interface name: {iface}')
+
+def _safe_shell_str(s):
+    """Escape a string for safe use inside a double-quoted shell argument."""
+    return s.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
 
 def run_cmd(cmd, check=True):
     try:
@@ -626,7 +657,13 @@ def parse_wg_show(iface):
 
 def generate_keypair():
     priv, _, _ = run_cmd('wg genkey')
-    pub,  _, _ = run_cmd(f'echo "{priv.strip()}" | wg pubkey')
+    # Pipe private key via stdin to avoid shell injection
+    try:
+        r = subprocess.run(['wg', 'pubkey'], input=priv.strip(),
+                           capture_output=True, text=True, timeout=10)
+        pub = r.stdout.strip()
+    except Exception as e:
+        raise RuntimeError(f'wg pubkey failed: {e}')
     return priv.strip(), pub.strip()
 
 def generate_preshared_key():
@@ -889,6 +926,7 @@ def api_config():
 
 @app.route('/api/<iface>/geo')
 @require_auth
+@validate_iface
 def api_iface_geo(iface):
     """Return geo data for all peer endpoints on this interface."""
     import urllib.request, json as _json
@@ -974,6 +1012,7 @@ def api_iface_geo(iface):
 
 @app.route('/api/<iface>/log')
 @require_auth
+@validate_iface
 def api_iface_log(iface):
     import time as _time
     n      = min(int(request.args.get('lines', 100)), 1000)
@@ -1062,11 +1101,19 @@ def save_managed_routes(routes):
         json.dump(routes, f, indent=2)
     _sync_routes_service(routes)
 
+def _validate_route_field(val, name):
+    """Only allow alphanumeric, dots, colons, slashes and hyphens in route fields."""
+    if val and not re.match(r'^[a-zA-Z0-9.:/\\-]+$', val):
+        raise ValueError(f'Invalid characters in route field {name}: {val!r}')
+
 def _route_cmd(r, action='add'):
-    cmd = f'ip route {action} {r["dst"]}'
-    if r.get('via'):    cmd += f' via {r["via"]}'
-    if r.get('dev'):    cmd += f' dev {r["dev"]}'
-    if r.get('metric'): cmd += f' metric {r["metric"]}'
+    dst = r["dst"]; via = r.get("via",""); dev = r.get("dev",""); metric = r.get("metric","")
+    for val, name in [(dst,"dst"),(via,"via"),(dev,"dev"),(metric,"metric")]:
+        if val: _validate_route_field(val, name)
+    cmd = f'ip route {action} {dst}'
+    if via:    cmd += f' via {via}'
+    if dev:    cmd += f' dev {dev}'
+    if metric: cmd += f' metric {metric}'
     return cmd
 
 def _sync_routes_service(routes):
@@ -1169,6 +1216,7 @@ def api_toggle_route_persist(idx):
 
 @app.route('/api/<iface>/throughput')
 @require_auth
+@validate_iface_or_wan
 def api_throughput(iface):
     import time
     rx1, tx1 = read_iface_bytes(iface)
@@ -1290,6 +1338,7 @@ def api_create_interface():
 
 @app.route('/api/interfaces/<iface>/up', methods=['POST'])
 @require_role('admin', 'operator')
+@validate_iface
 def api_interface_up(iface):
     try:
         run_cmd(f'wg-quick up {iface}')
@@ -1299,6 +1348,7 @@ def api_interface_up(iface):
 
 @app.route('/api/interfaces/<iface>/down', methods=['POST'])
 @require_role('admin')
+@validate_iface
 def api_interface_down(iface):
     try:
         run_cmd(f'wg-quick down {iface}')
@@ -1308,6 +1358,7 @@ def api_interface_down(iface):
 
 @app.route('/api/interfaces/<iface>/restart', methods=['POST'])
 @require_role('admin')
+@validate_iface
 def api_interface_restart(iface):
     run_cmd(f'wg-quick down {iface}', check=False)
     try: run_cmd(f'wg-quick up {iface}'); return jsonify({'success': True})
@@ -1315,6 +1366,7 @@ def api_interface_restart(iface):
 
 @app.route('/api/interfaces/<iface>/toggle', methods=['POST'])
 @require_role('admin')
+@validate_iface
 def api_interface_toggle(iface):
     _, _, rc = run_cmd(f'ip link show {iface}', check=False)
     if rc == 0:
@@ -1327,6 +1379,7 @@ def api_interface_toggle(iface):
 
 @app.route('/api/interfaces/<iface>/delete', methods=['POST'])
 @require_role('admin')
+@validate_iface
 def api_delete_interface(iface):
     if not re.match(r'^wg\d+$', iface):
         return jsonify({'error': 'Invalid interface name'}), 400
@@ -1343,6 +1396,7 @@ def api_delete_interface(iface):
 
 @app.route('/api/<iface>/status')
 @require_auth
+@validate_iface
 def api_status(iface):
     cfg, peers = parse_wg_conf(iface); live = parse_wg_show(iface)
     _, _, iface_rc = run_cmd(f'ip link show {iface}', check=False)
@@ -1350,7 +1404,13 @@ def api_status(iface):
     # Derive server public key from conf (works even if iface is down)
     server_pub = ''
     if cfg.get('PrivateKey'):
-        derived, _, _rc = run_cmd(f'echo "{cfg["PrivateKey"]}" | wg pubkey', check=False)
+        try:
+            _r = subprocess.run(['wg', 'pubkey'], input=cfg['PrivateKey'].strip(),
+                                capture_output=True, text=True, timeout=5)
+            derived = _r.stdout.strip()
+        except Exception:
+            derived = ''
+        _rc = 0
         if _rc == 0 and derived.strip():
             server_pub = derived.strip()
     if not server_pub:
@@ -1368,11 +1428,13 @@ def api_status(iface):
 
 @app.route('/api/<iface>/interface')
 @require_auth
+@validate_iface
 def api_get_interface(iface):
     cfg, _ = parse_wg_conf(iface); return jsonify(cfg)
 
 @app.route('/api/<iface>/interface', methods=['PUT'])
 @require_role('admin')
+@validate_iface
 def api_update_interface(iface):
     data = request.json; cfg, peers = parse_wg_conf(iface)
     # NOTE: DNS excluded — must not be set in server [Interface] (breaks server DNS via systemd-resolved)
@@ -1405,6 +1467,7 @@ def api_generate_keys():
 
 @app.route('/api/<iface>/peers', methods=['POST'])
 @require_role('admin', 'operator')
+@validate_iface
 def api_add_peer(iface):
     data = request.json; cfg, peers = parse_wg_conf(iface)
     name = data.get('name','').strip(); priv = data.get('private_key','').strip()
@@ -1414,7 +1477,12 @@ def api_add_peer(iface):
     if not pub:
         if not priv: priv, pub = generate_keypair()
         else:
-            p, _, _ = run_cmd(f'echo "{priv}" | wg pubkey'); pub = p.strip()
+            try:
+                _r = subprocess.run(['wg', 'pubkey'], input=priv.strip(),
+                                    capture_output=True, text=True, timeout=5)
+                p = _r.stdout; pub = p.strip()
+            except Exception:
+                pub = ''
     if not ips: ips = next_available_ip(cfg, peers) or '10.0.0.2/32'
     if any(p.get('PublicKey') == pub for p in peers):
         return jsonify({'error': 'Duplicate public key.'}), 400
@@ -1427,7 +1495,12 @@ def api_add_peer(iface):
     # Derive server public key — prefer conf derivation (works even if iface is down)
     server_pub = ''
     if cfg.get('PrivateKey'):
-        derived, _, rc = run_cmd(f'echo "{cfg["PrivateKey"]}" | wg pubkey', check=False)
+        try:
+            _r = subprocess.run(['wg', 'pubkey'], input=cfg['PrivateKey'].strip(),
+                                capture_output=True, text=True, timeout=5)
+            derived = _r.stdout.strip(); rc = 0
+        except Exception:
+            derived = ''; rc = 1
         if rc == 0 and derived.strip():
             server_pub = derived.strip()
     if not server_pub:
@@ -1458,6 +1531,7 @@ def api_add_peer(iface):
 
 @app.route('/api/<iface>/peers/<path:pubkey>', methods=['PUT'])
 @require_role('admin', 'operator')
+@validate_iface
 def api_update_peer(iface, pubkey):
     data = request.json; cfg, peers = parse_wg_conf(iface); found = False
     for peer in peers:
@@ -1482,6 +1556,7 @@ def api_update_peer(iface, pubkey):
 
 @app.route('/api/<iface>/peers/<path:pubkey>', methods=['DELETE'])
 @require_role('admin', 'operator')
+@validate_iface
 def api_delete_peer(iface, pubkey):
     cfg, peers = parse_wg_conf(iface); orig = len(peers)
     peers = [p for p in peers if p.get('PublicKey') != pubkey]
@@ -1495,6 +1570,7 @@ def api_delete_peer(iface, pubkey):
 
 @app.route('/api/<iface>/peers/<path:pubkey>/toggle', methods=['POST'])
 @require_role('admin', 'operator')
+@validate_iface
 def api_toggle_peer(iface, pubkey):
     try:
         cfg, peers = parse_wg_conf(iface)
@@ -1514,6 +1590,7 @@ def api_toggle_peer(iface, pubkey):
 
 @app.route('/api/<iface>/peers/export')
 @require_role('admin')
+@validate_iface
 def api_export_peers(iface):
     cfg, peers = parse_wg_conf(iface)
     meta       = load_meta(iface)
@@ -1606,6 +1683,7 @@ def api_export_peers(iface):
 
 @app.route('/api/<iface>/traffic/live')
 @require_auth
+@validate_iface_or_wan
 def api_traffic_live(iface):
     import time
     rx1, tx1 = read_iface_bytes(iface)
@@ -1628,6 +1706,7 @@ def api_traffic_live(iface):
 
 @app.route('/api/<iface>/traffic/history')
 @require_auth
+@validate_iface_or_wan
 def api_traffic_history(iface):
     import time
     minutes = min(int(request.args.get('minutes', 60)), 1440)
@@ -1643,6 +1722,7 @@ def api_traffic_history(iface):
 
 @app.route('/api/<iface>/traffic/stats')
 @require_auth
+@validate_iface_or_wan
 def api_traffic_stats(iface):
     import time
     now   = int(time.time())
@@ -1681,6 +1761,7 @@ def api_traffic_stats(iface):
 
 @app.route('/api/<iface>/peers/<path:pubkey>/privkey')
 @require_role('admin')
+@validate_iface
 def api_get_peer_privkey(iface, pubkey):
     privkey = get_peer_key(iface, pubkey)
     if privkey is None:
@@ -1690,7 +1771,12 @@ def api_get_peer_privkey(iface, pubkey):
     # Derive server public key from conf (works even if iface is down)
     server_pub = ''
     if cfg.get('PrivateKey'):
-        derived, _, rc = run_cmd(f'echo "{cfg["PrivateKey"]}" | wg pubkey', check=False)
+        try:
+            _r = subprocess.run(['wg', 'pubkey'], input=cfg['PrivateKey'].strip(),
+                                capture_output=True, text=True, timeout=5)
+            derived = _r.stdout.strip(); rc = 0
+        except Exception:
+            derived = ''; rc = 1
         if rc == 0 and derived.strip():
             server_pub = derived.strip()
     if not server_pub:
@@ -1717,12 +1803,14 @@ def api_get_peer_privkey(iface, pubkey):
 
 @app.route('/api/<iface>/peers/<path:pubkey>/rules')
 @require_auth
+@validate_iface
 def api_get_rules(iface, pubkey):
     pm = load_meta(iface).get(pubkey, {})
     return jsonify({'ipt_rules': pm.get('ipt_rules',[]), 'post_up': pm.get('post_up',''), 'post_down': pm.get('post_down','')})
 
 @app.route('/api/<iface>/peers/<path:pubkey>/rules', methods=['PUT'])
 @require_role('admin', 'operator')
+@validate_iface
 def api_set_rules(iface, pubkey):
     data = request.json; _, peers = parse_wg_conf(iface)
     peer_ip_cidr = data.get('allowed_ips','')
@@ -1746,6 +1834,7 @@ def api_set_rules(iface, pubkey):
 
 @app.route('/api/<iface>/firewall-script')
 @require_auth
+@validate_iface
 def api_get_firewall_script(iface):
     try:
         with open(postup_path(iface)) as f:
@@ -1763,6 +1852,7 @@ def api_get_firewall_script(iface):
 
 @app.route('/api/<iface>/peers/<path:pubkey>/rules/preview', methods=['POST'])
 @require_role('admin', 'operator')  # readonly has no reason to call preview
+@validate_iface
 def api_preview_rules(iface, pubkey):
     data = request.json
     peer_ip   = data.get('allowed_ips', '10.0.0.2/32').split('/')[0]

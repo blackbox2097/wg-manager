@@ -77,6 +77,11 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 
 /* Views */
 .view{display:none;animation:fadeIn .18s ease;background:var(--bg);min-height:100vh}
+.fw-script-box{background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius);font-size:10px;font-family:var(--font-mono);color:var(--green);overflow:hidden}
+.fw-script-box pre{margin:0;padding:8px 10px;max-height:90px;overflow:hidden;white-space:pre;transition:max-height .2s ease}
+.fw-script-box pre.expanded{max-height:600px;overflow-y:auto}
+.fw-script-expand{display:flex;align-items:center;justify-content:center;gap:5px;padding:4px;border-top:1px solid var(--border);cursor:pointer;color:var(--text3);font-size:9.5px;font-family:var(--font-ui);letter-spacing:.5px;transition:color var(--trans);background:var(--bg2)}
+.fw-script-expand:hover{color:var(--text)}
 .fwd-banner{display:none;align-items:center;gap:10px;padding:9px 20px;background:rgba(255,209,102,.08);border-bottom:1px solid rgba(255,209,102,.2);font-size:11.5px;color:var(--yellow);flex-shrink:0}
 .fwd-banner svg{width:14px;height:14px;flex-shrink:0}
 .fwd-banner-msg{flex:1}
@@ -2063,33 +2068,49 @@ function renderIfaceView(s) {
   }
 
   // Firewall / routing tab — separate API call, failures are silent
-  // Firewall panel — only fetch if we have an active interface and valid session
   const _iface = activeIface;
   if (!_iface) return;
+
+  function makeScriptBox(id, content) {
+    const escaped = esc(content || '# (empty)');
+    return `<div class="fw-script-box">
+      <pre id="fw-pre-${id}">${escaped}</pre>
+      <div class="fw-script-expand" onclick="toggleFwScript('${id}')" id="fw-btn-${id}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="10" height="10"><path d="M3 6l5 5 5-5"/></svg>
+        Expand
+      </div>
+    </div>`;
+  }
+
+  // Fetch interface config for MTU
   apiFetch('/api/' + _iface + '/interface')
-    .then(cfg => {
-      window._ifaceCfg = cfg;
-      function fwVal(v) {
-        if (!v || v === '—') return '—';
-        // Render each line separately
-        const lines = v.split(/\n|;\s*/).map(l => l.trim()).filter(Boolean);
-        if (lines.length <= 1) return esc(v);
-        return '<div style="display:flex;flex-direction:column;gap:3px;max-height:140px;overflow-y:auto">' +
-          lines.map(l => '<code style="font-size:10px;color:var(--green);background:var(--bg);padding:2px 6px;border-radius:3px;display:block;white-space:pre-wrap;word-break:break-all">'+esc(l)+'</code>').join('') +
-          '</div>';
-      }
+    .then(cfg => { window._ifaceCfg = cfg; })
+    .catch(() => {});
+
+  // Fetch actual script contents
+  apiFetch('/api/' + _iface + '/firewall-script')
+    .then(s => {
+      const mtu = (window._ifaceCfg || {}).MTU;
       const fw = [
-        {k:'PostUp',    v: fwVal(cfg.PostUp)},
-        {k:'PostDown',  v: fwVal(cfg.PostDown)},
-        {k:'DNS',       v: '<span style="color:var(--text3);font-size:10px">not set on server — belongs in client config</span>'},
-        {k:'MTU',       v: esc(cfg.MTU    || 'default')},
-        {k:'PrivateKey',v: '••••••••••••••••••••••'},
+        {k:'PostUp',   v: makeScriptBox('postup',   s.postup)},
+        {k:'PostDown', v: makeScriptBox('postdown',  s.postdown)},
+        {k:'MTU',      v: mtu ? esc(mtu) : '1420 <span style="color:var(--text3);font-size:10px">(default)</span>'},
       ];
       document.getElementById('iface-firewall').innerHTML = fw.map(r =>
-        '<div class="kv-row" style="align-items:flex-start;gap:12px"><div class="kv-key" style="padding-top:4px;flex-shrink:0;width:80px">'+r.k+'</div><div style="flex:1;overflow:hidden;text-align:left">'+r.v+'</div></div>'
+        '<div class="kv-row" style="align-items:flex-start;gap:12px;margin-bottom:6px"><div class="kv-key" style="padding-top:6px;flex-shrink:0;width:80px">'+r.k+'</div><div style="flex:1;overflow:hidden;text-align:left">'+r.v+'</div></div>'
       ).join('');
     })
     .catch(() => {});
+}
+
+function toggleFwScript(id) {
+  const pre = document.getElementById('fw-pre-' + id);
+  const btn = document.getElementById('fw-btn-' + id);
+  if (!pre) return;
+  const expanded = pre.classList.toggle('expanded');
+  btn.innerHTML = expanded
+    ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="10" height="10"><path d="M3 10l5-5 5 5"/></svg> Collapse'
+    : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="10" height="10"><path d="M3 6l5 5 5-5"/></svg> Expand';
 }
 
 // ═══ Create Interface ═══

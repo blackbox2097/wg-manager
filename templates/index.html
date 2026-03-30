@@ -586,10 +586,10 @@ select option{background:var(--bg3)}
 
       <!-- Stats cards -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px" id="traffic-stats-grid">
-        <div class="stat-card"><div class="stat-label">Live ↓</div><div class="stat-value" id="tst-rx-live" style="font-size:20px;padding-top:4px">—</div><div class="stat-sub">current download</div></div>
-        <div class="stat-card red"><div class="stat-label">Live ↑</div><div class="stat-value" id="tst-tx-live" style="font-size:20px;padding-top:4px">—</div><div class="stat-sub">current upload</div></div>
-        <div class="stat-card yellow"><div class="stat-label">24h Avg ↓ / ↑</div><div class="stat-value" id="tst-avg" style="font-size:14px;padding-top:6px">—</div><div class="stat-sub" id="tst-avg-sub">24h average</div></div>
-        <div class="stat-card blue"><div class="stat-label">24h Peak ↓ / ↑</div><div class="stat-value" id="tst-peak" style="font-size:14px;padding-top:6px">—</div><div class="stat-sub" id="tst-peak-sub">24h maximum</div></div>
+        <div class="stat-card"><div class="stat-label">Live TX ↑</div><div class="stat-value" id="tst-rx-live" style="font-size:20px;padding-top:4px">—</div><div class="stat-sub">sending to peers</div></div>
+        <div class="stat-card red"><div class="stat-label">Live RX ↓</div><div class="stat-value" id="tst-tx-live" style="font-size:20px;padding-top:4px">—</div><div class="stat-sub">receiving from peers</div></div>
+        <div class="stat-card yellow"><div class="stat-label">24h Avg TX / RX</div><div class="stat-value" id="tst-avg" style="font-size:14px;padding-top:6px">—</div><div class="stat-sub" id="tst-avg-sub">24h average</div></div>
+        <div class="stat-card blue"><div class="stat-label">24h Peak TX / RX</div><div class="stat-value" id="tst-peak" style="font-size:14px;padding-top:6px">—</div><div class="stat-sub" id="tst-peak-sub">24h maximum</div></div>
       </div>
 
       <!-- Chart -->
@@ -597,10 +597,10 @@ select option{background:var(--bg3)}
         <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
           <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text2);font-family:var(--font-ui);font-weight:700">Throughput</div>
           <div style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--green)">
-            <div style="width:20px;height:2px;background:var(--green);border-radius:1px"></div>Download
+            <div style="width:20px;height:2px;background:var(--green);border-radius:1px"></div>TX (out)
           </div>
           <div style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--yellow)">
-            <div style="width:20px;height:2px;background:var(--yellow);border-radius:1px"></div>Upload
+            <div style="width:20px;height:2px;background:var(--yellow);border-radius:1px"></div>RX (in)
           </div>
           <div style="margin-left:auto;font-size:10px;color:var(--text3)" id="traffic-sample-count"></div>
         </div>
@@ -612,7 +612,7 @@ select option{background:var(--bg3)}
       </div>
 
       <div style="font-size:10px;color:var(--text3);margin-top:10px;text-align:center">
-        Samples collected every 10 seconds. Data retained for 25 hours.
+        Samples collected every 3 seconds. Data retained for 25 hours.
       </div>
     </div>
 
@@ -1705,8 +1705,8 @@ async function pollTrafficLive() {
   if (!activeIface) return;
   try {
     const d = await apiFetch('/api/' + activeIface + '/traffic/live');
-    document.getElementById('tst-rx-live').textContent = d.rx_human;
-    document.getElementById('tst-tx-live').textContent = d.tx_human;
+    document.getElementById('tst-rx-live').textContent = d.tx_human;
+    document.getElementById('tst-tx-live').textContent = d.rx_human;
   } catch(e) {}
 }
 
@@ -1715,8 +1715,8 @@ async function loadTrafficStats() {
   try {
     const d = await apiFetch('/api/' + activeIface + '/traffic/stats');
     const h = d.h24;
-    document.getElementById('tst-avg').textContent  = h.avg_rx_h + ' / ' + h.avg_tx_h;
-    document.getElementById('tst-peak').textContent = h.max_rx_h + ' / ' + h.max_tx_h;
+    document.getElementById('tst-avg').textContent  = h.avg_tx_h + ' / ' + h.avg_rx_h;
+    document.getElementById('tst-peak').textContent = h.max_tx_h + ' / ' + h.max_rx_h;
     document.getElementById('tst-avg-sub').textContent  = h.samples + ' samples';
     document.getElementById('tst-peak-sub').textContent = 'last 24h';
   } catch(e) {}
@@ -1822,8 +1822,8 @@ function drawTrafficChart(data, minutes) {
 
   const rxSeries = data.map(d => ({ts: d.ts, v: d.rx}));
   const txSeries = data.map(d => ({ts: d.ts, v: d.tx}));
-  plotLine(txSeries, C_TX);
-  plotLine(rxSeries, C_RX);
+  plotLine(rxSeries, C_TX);
+  plotLine(txSeries, C_RX);
 
   // X axis time labels
   const labelCount = Math.min(6, Math.floor(CW / (60 * dpr)));

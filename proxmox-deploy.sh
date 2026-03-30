@@ -3,7 +3,7 @@
 # Run on Proxmox host as root:
 #   bash proxmox-deploy.sh
 # Or pull directly from GitHub:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/blackbox2097/wg-manager/main/proxmox-deploy.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/wg-manager/main/proxmox-deploy.sh)
 
 set -e
 
@@ -22,7 +22,7 @@ CT_BRIDGE="${CT_BRIDGE:-vmbr0}"           # network bridge
 CT_IP="${CT_IP:-}"                        # "dhcp" or "192.168.1.50/24" — prompted if empty
 CT_GW="${CT_GW:-}"                        # gateway — only needed for static IP
 
-REPO="${REPO:-blackbox2097/wg-manager}"
+REPO="${REPO:-YOUR_USERNAME/wg-manager}"
 BRANCH="${BRANCH:-main}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
 TEMPLATE_NAME=""                          # auto-detected
@@ -44,22 +44,45 @@ if ! command -v pct &>/dev/null; then
   exit 1
 fi
 
-# ── Auto-pick next free CT ID ─────────────────────────────────────────────────
-if [[ -z "$CT_ID" ]]; then
-  CT_ID=$(pvesh get /cluster/nextid 2>/dev/null || echo "")
-  if [[ -z "$CT_ID" ]]; then
-    # Fallback: find manually
-    CT_ID=200
-    while pct status "$CT_ID" &>/dev/null; do
-      CT_ID=$((CT_ID + 1))
-    done
-  fi
-  echo "→ Auto-selected CT ID: $CT_ID"
+# ── Interactive prompts ───────────────────────────────────────────────────────
+echo ""
+
+# CT ID
+NEXT_ID=$(pvesh get /cluster/nextid 2>/dev/null || echo "")
+if [[ -z "$NEXT_ID" ]]; then
+  NEXT_ID=200
+  while pct status "$NEXT_ID" &>/dev/null; do NEXT_ID=$((NEXT_ID + 1)); done
 fi
 
-# ── Prompt for root password if not set ───────────────────────────────────────
+if [[ -z "$CT_ID" ]]; then
+  echo -n "→ Container ID [default: $NEXT_ID]: "
+  read -r INPUT_ID
+  CT_ID="${INPUT_ID:-$NEXT_ID}"
+fi
+
+# Provjeri da ID nije zauzet
+if pct status "$CT_ID" &>/dev/null; then
+  echo "✕ Container ID $CT_ID already exists. Use a different ID."
+  exit 1
+fi
+echo "  CT ID: $CT_ID"
+
+# Storage
+if [[ -z "$CT_STORAGE" ]]; then
+  echo ""
+  echo "Available storages:"
+  pvesm status 2>/dev/null | awk 'NR>1 {printf "  %-20s %s
+", $1, $2}' || echo "  (could not list storages)"
+  echo -n "→ Storage [default: local]: "
+  read -r INPUT_STORAGE
+  CT_STORAGE="${INPUT_STORAGE:-local}"
+fi
+echo "  Storage: $CT_STORAGE"
+
+# Root password
 if [[ -z "$CT_PASSWORD" ]]; then
-  echo -n "→ Set root password for container: "
+  echo ""
+  echo -n "→ Root password for container: "
   read -rs CT_PASSWORD
   echo ""
   if [[ -z "$CT_PASSWORD" ]]; then
@@ -67,6 +90,8 @@ if [[ -z "$CT_PASSWORD" ]]; then
     exit 1
   fi
 fi
+
+echo ""
 
 # ── Ensure WireGuard module is loaded on host (shared kernel) ─────────────────
 echo "→ Checking WireGuard kernel module on host..."

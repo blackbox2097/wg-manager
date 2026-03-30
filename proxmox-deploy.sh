@@ -222,12 +222,13 @@ done
 
 # ── Run installer inside container ────────────────────────────────────────────
 echo "→ Running installer inside container..."
-pct exec "$CT_ID" -- bash -c "
-  set -e
-  apt-get update -qq
-  apt-get install -y --quiet curl
-  bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/${BRANCH}/install.sh)
-"
+
+# Install curl first
+pct exec "$CT_ID" -- bash -c "apt-get update -qq && apt-get install -y --quiet curl"
+
+# Download install.sh into container, then execute it
+pct exec "$CT_ID" -- bash -c "curl -fsSL https://raw.githubusercontent.com/${REPO}/${BRANCH}/install.sh -o /tmp/install.sh && chmod +x /tmp/install.sh"
+pct exec "$CT_ID" -- bash /tmp/install.sh
 
 echo "✓ Application installed"
 

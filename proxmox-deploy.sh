@@ -21,6 +21,7 @@ CT_CORES="${CT_CORES:-1}"                 # CPU cores
 CT_BRIDGE="${CT_BRIDGE:-vmbr0}"           # network bridge
 CT_IP="${CT_IP:-}"                        # "dhcp" or "192.168.1.50/24" — prompted if empty
 CT_GW="${CT_GW:-}"                        # gateway — only needed for static IP
+CT_VLAN="${CT_VLAN:-}"                       # VLAN tag (e.g. 10) — leave empty if none
 
 REPO="${REPO:-YOUR_USERNAME/wg-manager}"
 BRANCH="${BRANCH:-main}"
@@ -146,12 +147,20 @@ if [[ -z "$CT_IP" ]]; then
   fi
 fi
 
+# VLAN ID
+if [[ -z "${CT_VLAN:-}" ]]; then
+  echo -n "→ VLAN ID (leave empty if none): "
+  read -r CT_VLAN
+fi
+
 if [[ "$CT_IP" == "dhcp" ]]; then
   NET_CONFIG="name=eth0,bridge=${CT_BRIDGE},ip=dhcp"
 else
   [[ -n "$CT_GW" ]] && GW_PART=",gw=${CT_GW}" || GW_PART=""
   NET_CONFIG="name=eth0,bridge=${CT_BRIDGE},ip=${CT_IP}${GW_PART}"
 fi
+
+[[ -n "$CT_VLAN" ]] && NET_CONFIG="${NET_CONFIG},tag=${CT_VLAN}"
 
 # ── Create container ──────────────────────────────────────────────────────────
 echo "→ Creating LXC container (ID: ${CT_ID}, hostname: ${CT_HOSTNAME})..."

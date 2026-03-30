@@ -882,6 +882,142 @@ def api_config():
         'ip_forwarding':    check_ip_forwarding(),
     })
 
+# ════════════════════════════════════════════════════════════════════════════
+# API — Static Routes
+# ════════════════════════════════════════════════════════════════════════════
+
+ROUTES_META_PATH    = os.path.join(META_DIR, 'wg-manager-routes.json')
+ROUTES_SERVICE_PATH = '/etc/systemd/system/wg-manager-routes.service'
+
+def load_managed_routes():
+    try:
+        if os.path.exists(ROUTES_META_PATH):
+            return json.load(open(ROUTES_META_PATH))
+    except Exception:
+        pass
+    return []
+
+def save_managed_routes(routes):
+    with open(ROUTES_META_PATH, 'w') as f:
+        json.dump(routes, f, indent=2)
+    _sync_routes_service(routes)
+
+def _route_cmd(r, action='add'):
+    cmd = f'ip route {action} {r["dst"]}'
+    if r.get('via'):    cmd += f' via {r["via"]}'
+    if r.get('dev'):    cmd += f' dev {r["dev"]}'
+    if r.get('metric'): cmd += f' metric {r["metric"]}'
+    return cmd
+
+def _sync_routes_service(routes):
+    """Write/update systemd oneshot service for persistent routes. Remove if none persist."""
+    persistent = [r for r in routes if r.get('persist')]
+    if not persistent:
+        # Remove service if it exists
+        if os.path.exists(ROUTES_SERVICE_PATH):
+            run_cmd('systemctl disable wg-manager-routes 2>/dev/null; rm -f ' + ROUTES_SERVICE_PATH, check=False)
+            run_cmd('systemctl daemon-reload', check=False)
+        return
+
+    def _exec_line(r):
+        cmd = 'ExecStart=/sbin/ip route replace ' + r['dst']
+        if r.get('via'):    cmd += ' via '    + r['via']
+        if r.get('dev'):    cmd += ' dev '    + r['dev']
+        if r.get('metric'): cmd += ' metric ' + r['metric']
+        return cmd
+    exec_lines = chr(10).join(_exec_line(r) for r in persistent)
+
+    service = f"""[Unit]
+Description=WireGuard Manager — Persistent Static Routes
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+{exec_lines}
+
+[Install]
+WantedBy=multi-user.target
+"""
+    with open(ROUTES_SERVICE_PATH, 'w') as f:
+        f.write(service)
+    run_cmd('systemctl daemon-reload', check=False)
+    run_cmd('systemctl enable wg-manager-routes', check=False)
+
+
+@app.route('/api/routes')
+@require_role('admin', 'operator')
+def api_list_routes():
+    return jsonify({'routes': load_managed_routes()})
+
+@app.route('/api/routes/system')
+@require_role('admin', 'operator')
+def api_system_routes():
+    out, _, _ = run_cmd('ip route show', check=False)
+    return jsonify({'output': out})
+
+@app.route('/api/routes', methods=['POST'])
+@require_role('admin', 'operator')
+def api_add_route():
+    data    = request.json or {}
+    dst     = data.get('dst', '').strip()
+    via     = data.get('via', '').strip()
+    dev     = data.get('dev', '').strip()
+    metric  = data.get('metric', '').strip()
+    persist = bool(data.get('persist', False))
+
+    if not dst:
+        return jsonify({'error': 'Destination is required'}), 400
+    if not via and not dev:
+        return jsonify({'error': 'Gateway or interface is required'}), 400
+
+    try:
+        ipaddress.ip_network(dst, strict=False)
+    except ValueError:
+        return jsonify({'error': f'Invalid destination: {dst}'}), 400
+
+    r = {'dst': dst, 'via': via, 'dev': dev, 'metric': metric, 'persist': persist}
+
+    _, stderr, rc = run_cmd(_route_cmd(r, 'add'), check=False)
+    if rc != 0:
+        # Try replace in case route already exists
+        _, stderr, rc = run_cmd(_route_cmd(r, 'replace'), check=False)
+    if rc != 0:
+        return jsonify({'error': stderr or 'Failed to add route'}), 500
+
+    routes = load_managed_routes()
+    routes.append(r)
+    save_managed_routes(routes)  # also syncs systemd service
+
+    return jsonify({'success': True})
+
+@app.route('/api/routes/<int:idx>', methods=['DELETE'])
+@require_role('admin', 'operator')
+def api_delete_route(idx):
+    routes = load_managed_routes()
+    if idx < 0 or idx >= len(routes):
+        return jsonify({'error': 'Route not found'}), 404
+
+    r = routes[idx]
+    run_cmd(_route_cmd(r, 'del'), check=False)
+    routes.pop(idx)
+    save_managed_routes(routes)  # also syncs systemd service
+
+    return jsonify({'success': True})
+
+@app.route('/api/routes/<int:idx>/persist', methods=['PUT'])
+@require_role('admin', 'operator')
+def api_toggle_route_persist(idx):
+    """Toggle persist flag on an existing route."""
+    routes = load_managed_routes()
+    if idx < 0 or idx >= len(routes):
+        return jsonify({'error': 'Route not found'}), 404
+    routes[idx]['persist'] = not routes[idx].get('persist', False)
+    save_managed_routes(routes)
+    return jsonify({'success': True, 'persist': routes[idx]['persist']})
+
+
 @app.route('/api/system/ip-forwarding', methods=['POST'])
 @require_role('admin')
 def api_enable_ip_forwarding():

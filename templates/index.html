@@ -271,7 +271,7 @@ select option{background:var(--bg3)}
 /* System stats widget */
 .sys-stats{display:flex;align-items:center;gap:14px;padding:0 4px}
 .sys-stat{display:flex;align-items:center;gap:7px}
-.sys-stat-label{font-size:9.5px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;font-family:var(--font-ui)}
+.sys-stat-label{font-size:9.5px;color:var(--text2);letter-spacing:.5px;text-transform:uppercase;font-family:var(--font-ui)}
 .sys-bar-wrap{width:52px;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden;position:relative}
 .sys-bar{height:100%;border-radius:3px;transition:width .6s ease}
 .sys-bar.cpu{background:var(--blue)}
@@ -280,7 +280,7 @@ select option{background:var(--bg3)}
 .sys-bar.crit{background:var(--red)}
 .sys-stat-val{font-size:10.5px;font-weight:600;color:var(--text);min-width:32px;text-align:right}
 .sys-divider{width:1px;height:20px;background:var(--border2)}
-.sys-uptime{font-size:10px;color:var(--text3)}
+.sys-uptime{font-size:10px;color:var(--text2)}
 
 /* Iptables builder */
 .ipt-layout{display:grid;grid-template-columns:1fr 340px;gap:14px;padding:16px}
@@ -1653,7 +1653,7 @@ function drawTrafficChart(data, minutes) {
   const PAD_L = 56 * dpr;
   const PAD_R = 12 * dpr;
   const PAD_T = 10 * dpr;
-  const PAD_B = 8  * dpr;
+  const PAD_B = 22 * dpr;
   const CW    = W - PAD_L - PAD_R;
   const CH    = H - PAD_T - PAD_B;
 
@@ -1661,7 +1661,7 @@ function drawTrafficChart(data, minutes) {
   const style  = getComputedStyle(document.documentElement);
   const C_BG3  = style.getPropertyValue('--bg3').trim()   || '#181d20';
   const C_GRID = style.getPropertyValue('--border').trim()|| '#1f2830';
-  const C_TEXT = style.getPropertyValue('--text3').trim() || '#3d5060';
+  const C_TEXT = style.getPropertyValue('--text2').trim() || '#6b808f';
   const C_RX   = '#00e676';
   const C_TX   = '#ffd166';
 
@@ -1737,7 +1737,7 @@ function drawTrafficChart(data, minutes) {
     const x = PAD_L + (i / labelCount) * CW;
     const d = new Date(t * 1000);
     const label = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
-    ctx.fillText(label, x, H - 0);
+    ctx.fillText(label, x, PAD_T + CH + 14 * dpr);
   }
 }
 

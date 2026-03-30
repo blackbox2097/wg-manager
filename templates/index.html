@@ -458,6 +458,10 @@ select option{background:var(--bg3)}
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="13" height="13"><path d="M2 2h12v12H2z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>
       Log
     </button>
+    <button class="iface-tab" id="tab-geo" onclick="switchView('geo',this)">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="13" height="13"><circle cx="8" cy="8" r="6"/><path d="M8 2c0 0-3 2.5-3 6s3 6 3 6"/><path d="M8 2c0 0 3 2.5 3 6s-3 6-3 6"/><path d="M2 8h12"/></svg>
+      Geo
+    </button>
   </div>
 
   <div class="content">
@@ -613,6 +617,43 @@ select option{background:var(--bg3)}
     </div>
 
     <!-- ── Backup / Restore ── -->
+    <!-- ── Geo ── -->
+    <div class="view" id="view-geo">
+      <div class="section-header">
+        <div class="section-title" id="geo-title">Peer Locations</div>
+        <div class="section-sep"></div>
+        <button class="btn btn-ghost btn-sm" onclick="loadGeo()">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="12" height="12"><path d="M13.5 2.5A7 7 0 1 1 2.5 8"/><path d="M13.5 2.5V6h-3.5"/></svg>
+          Refresh
+        </button>
+      </div>
+
+      <div id="geo-loading" style="text-align:center;padding:32px;color:var(--text3);font-size:12px;display:none">
+        <div class="spinner" style="margin:0 auto 10px"></div>
+        Looking up peer locations…
+      </div>
+
+      <div id="geo-table-wrap" class="table-wrap">
+        <table class="table">
+          <thead><tr>
+            <th>Peer</th>
+            <th>Endpoint IP</th>
+            <th>Country</th>
+            <th>City</th>
+            <th>ISP / Org</th>
+            <th>Handshake</th>
+          </tr></thead>
+          <tbody id="geo-tbody">
+            <tr><td colspan="6" style="text-align:center;color:var(--text3);padding:22px">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:10px;font-size:10px;color:var(--text3)">
+        Location data via <a href="https://ip-api.com" target="_blank" style="color:var(--text2)">ip-api.com</a> (free tier — 45 req/min). Only peers with a known endpoint are resolved.
+      </div>
+    </div>
+
     <!-- ── Log ── -->
     <div class="view" id="view-log">
       <div class="section-header">
@@ -2021,7 +2062,7 @@ async function selectInterface(name) {
 
 
 // ═══ Nav ═══
-const viewTitles = {dashboard:'Dashboard',peers:'Peers',rules:'Firewall Rules',traffic:'Traffic',interface:'Interface Config',log:'Interface Log',users:'User Management',backup:'Backup & Restore',routes:'Static Routes'};
+const viewTitles = {dashboard:'Dashboard',peers:'Peers',rules:'Firewall Rules',traffic:'Traffic',interface:'Interface Config',log:'Interface Log',geo:'Peer Locations',users:'User Management',backup:'Backup & Restore',routes:'Static Routes'};
 function switchView(name, el) {
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -2049,7 +2090,7 @@ function switchView(name, el) {
     document.getElementById('dash-canvas').style.display = 'none';
   }
   // Hide tabbar for non-interface views
-  const ifaceViews = ['peers','rules','traffic','interface','log'];
+  const ifaceViews = ['peers','rules','traffic','interface','log','geo'];
   document.getElementById('iface-tabbar').style.display = ifaceViews.includes(name) ? 'flex' : 'none';
 
   if (name==='users')     loadUsers();
@@ -2057,11 +2098,12 @@ function switchView(name, el) {
   if (name==='routes')    loadRoutes();
   if (name==='log')       initLogView();
   if (name!=='log')       stopLogFollow();
+  if (name==='geo')       loadGeo();
   if (name==='traffic')   initTrafficView();
   if (name==='interface') refreshActiveIface();
 
   // Sync tab bar active state
-  ['peers','rules','traffic','interface','log'].forEach(t => {
+  ['peers','rules','traffic','interface','log','geo'].forEach(t => {
     const tab = document.getElementById('tab-'+t);
     if (tab) tab.classList.toggle('active', t === name);
   });
@@ -2817,6 +2859,67 @@ function downloadConf() {
   a.href = URL.createObjectURL(new Blob([clientConfData], {type:'text/plain'}));
   a.download = clientConfName + '.conf';
   a.click();
+}
+
+// ═══ Geo / Peer Locations ═══
+
+async function loadGeo() {
+  if (!activeIface) return;
+
+  const ifc = allInterfaces.find(i => i.name === activeIface);
+  document.getElementById('geo-title').textContent =
+    'Peer Locations — ' + ((ifc && ifc.alias) ? ifc.alias : activeIface);
+
+  const tbody   = document.getElementById('geo-tbody');
+  const loading = document.getElementById('geo-loading');
+  loading.style.display = 'block';
+  tbody.innerHTML = '';
+
+  try {
+    const d     = await apiFetch('/api/' + activeIface + '/geo');
+    const peers = d.peers || [];
+
+    loading.style.display = 'none';
+
+    if (!peers.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:22px">No peers with a known endpoint.</td></tr>';
+      return;
+    }
+
+    const rows = peers.map(p => {
+      const geo = p.geo || {};
+      const lhs = p.latest_handshake;
+      let age = '—';
+      if (lhs) {
+        const delta = Math.floor(Date.now()/1000) - lhs;
+        if (delta < 60)         age = delta + 's ago';
+        else if (delta < 3600)  age = Math.floor(delta/60) + 'm ago';
+        else if (delta < 86400) age = Math.floor(delta/3600) + 'h ago';
+        else                    age = Math.floor(delta/86400) + 'd ago';
+      }
+      const flag    = geo.countryCode
+        ? String.fromCodePoint(...[...geo.countryCode.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0)))
+        : '';
+      const country = geo.status === 'success' ? (flag + ' ' + (geo.country || '—')) : (geo.message || '—');
+      const city    = geo.status === 'success' ? (geo.city || '—') : '—';
+      const isp     = geo.status === 'success' ? (geo.org  || geo.isp || '—') : '—';
+
+      return '<tr>' +
+        '<td><span class="dot ' + (p.online ? 'online' : 'offline') + '" style="margin-right:6px"></span>' + esc(p.name || 'Unnamed') + '</td>' +
+        '<td style="font-family:var(--font-mono);color:var(--text2);font-size:11px">' + esc(p.endpoint || '—') + '</td>' +
+        '<td>' + country + '</td>' +
+        '<td style="color:var(--text2)">' + esc(city) + '</td>' +
+        '<td style="color:var(--text3);font-size:11px">' + esc(isp) + '</td>' +
+        '<td style="color:var(--text2)">' + age + '</td>' +
+        '</tr>';
+    });
+
+    tbody.innerHTML = rows.join('');
+
+  } catch(e) {
+    loading.style.display = 'none';
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--red);padding:16px">Error: ' + esc(e.message) + '</td></tr>';
+  }
 }
 
 // ═══ Interface Log ═══

@@ -883,6 +883,91 @@ def api_config():
     })
 
 # ════════════════════════════════════════════════════════════════════════════
+# API — Geo lookup
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/<iface>/geo')
+@require_auth
+def api_iface_geo(iface):
+    """Return geo data for all peer endpoints on this interface."""
+    import urllib.request, json as _json
+
+    _, peers = parse_wg_conf(iface)
+    live     = parse_wg_show(iface)
+    meta     = load_meta(iface)
+
+    # Collect unique endpoint IPs
+    ip_to_peers = {}
+    for peer in peers:
+        pk       = peer.get('PublicKey', '')
+        ld       = live.get(pk, {})
+        endpoint = ld.get('endpoint') or ''
+        if not endpoint:
+            continue
+        ip = endpoint.rsplit(':', 1)[0].strip('[]')  # strip port and IPv6 brackets
+        pm = meta.get(pk, {})
+        ip_to_peers.setdefault(ip, []).append({
+            'public_key':       pk,
+            'name':             pm.get('name') or peer.get('_name', ''),
+            'allowed_ips':      peer.get('AllowedIPs', ''),
+            'endpoint':         endpoint,
+            'online':           ld.get('online', False),
+            'latest_handshake': ld.get('latest_handshake', 0),
+            'rx_bytes':         ld.get('rx_bytes', 0),
+            'tx_bytes':         ld.get('tx_bytes', 0),
+        })
+
+    if not ip_to_peers:
+        return jsonify({'peers': []})
+
+    ips = list(ip_to_peers.keys())
+
+    # Batch lookup via ip-api.com (server-side, no CORS issues)
+    geo_map  = {}
+    try:
+        # Try each IP individually via ip-api.com (HTTP only on free tier)
+        # Fall back to ipinfo.io if ip-api fails
+        for ip in ips:
+            try:
+                url = 'http://ip-api.com/json/' + ip + '?fields=status,message,country,countryCode,city,isp,org,query'
+                req = urllib.request.Request(url, headers={'User-Agent': 'wg-manager/1.0'})
+                with urllib.request.urlopen(req, timeout=6) as r:
+                    data = _json.loads(r.read())
+                geo_map[ip] = data
+            except Exception:
+                # Fallback: ipinfo.io (HTTPS, free, no key needed for basic info)
+                try:
+                    url2 = 'https://ipinfo.io/' + ip + '/json'
+                    req2 = urllib.request.Request(url2, headers={'User-Agent': 'wg-manager/1.0'})
+                    with urllib.request.urlopen(req2, timeout=6) as r2:
+                        d2 = _json.loads(r2.read())
+                    # Normalize to ip-api format
+                    city, region = (d2.get('city','') , d2.get('region',''))
+                    geo_map[ip] = {
+                        'query':       ip,
+                        'status':      'success',
+                        'country':     d2.get('country', ''),
+                        'countryCode': d2.get('country', ''),
+                        'city':        city,
+                        'isp':         d2.get('org', ''),
+                        'org':         d2.get('org', ''),
+                    }
+                except Exception as e2:
+                    geo_map[ip] = {'query': ip, 'status': 'fail', 'message': str(e2)}
+    except Exception as e:
+        app.logger.warning(f'Geo lookup failed: {e}')
+
+    # Build response
+    result = []
+    for ip, peer_list in ip_to_peers.items():
+        geo = geo_map.get(ip, {})
+        for p in peer_list:
+            result.append({**p, 'geo': geo})
+
+    return jsonify({'peers': result})
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # API — Interface Log
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -960,6 +1045,61 @@ def api_iface_log(iface):
     return jsonify({'output': output})
 
 
+ROUTES_META_PATH    = os.path.join(META_DIR, 'wg-manager-routes.json')
+ROUTES_SERVICE_PATH = '/etc/systemd/system/wg-manager-routes.service'
+
+def load_managed_routes():
+    try:
+        if os.path.exists(ROUTES_META_PATH):
+            return json.load(open(ROUTES_META_PATH))
+    except Exception:
+        pass
+    return []
+
+def save_managed_routes(routes):
+    with open(ROUTES_META_PATH, 'w') as f:
+        json.dump(routes, f, indent=2)
+    _sync_routes_service(routes)
+
+def _route_cmd(r, action='add'):
+    cmd = f'ip route {action} {r["dst"]}'
+    if r.get('via'):    cmd += f' via {r["via"]}'
+    if r.get('dev'):    cmd += f' dev {r["dev"]}'
+    if r.get('metric'): cmd += f' metric {r["metric"]}'
+    return cmd
+
+def _sync_routes_service(routes):
+    persistent = [r for r in routes if r.get('persist')]
+    if not persistent:
+        if os.path.exists(ROUTES_SERVICE_PATH):
+            run_cmd('systemctl disable wg-manager-routes 2>/dev/null; rm -f ' + ROUTES_SERVICE_PATH, check=False)
+            run_cmd('systemctl daemon-reload', check=False)
+        return
+
+    def _exec_line(r):
+        cmd = 'ExecStart=/sbin/ip route replace ' + r['dst']
+        if r.get('via'):    cmd += ' via '    + r['via']
+        if r.get('dev'):    cmd += ' dev '    + r['dev']
+        if r.get('metric'): cmd += ' metric ' + r['metric']
+        return cmd
+
+    exec_lines = chr(10).join(_exec_line(r) for r in persistent)
+    svc_lines = [
+        '[Unit]',
+        'Description=WireGuard Manager Persistent Static Routes',
+        'After=network.target',
+        'Wants=network.target',
+        '',
+        '[Service]',
+        'Type=oneshot',
+        'RemainAfterExit=yes',
+    ]
+    service = chr(10).join(svc_lines) + chr(10) + exec_lines + chr(10) + chr(10) + '[Install]' + chr(10) + 'WantedBy=multi-user.target' + chr(10)
+
+# ════════════════════════════════════════════════════════════════════════════
+# API — Static Routes
+# ════════════════════════════════════════════════════════════════════════════
+
 @app.route('/api/routes')
 @require_role('admin', 'operator')
 def api_list_routes():
@@ -992,18 +1132,15 @@ def api_add_route():
         return jsonify({'error': f'Invalid destination: {dst}'}), 400
 
     r = {'dst': dst, 'via': via, 'dev': dev, 'metric': metric, 'persist': persist}
-
     _, stderr, rc = run_cmd(_route_cmd(r, 'add'), check=False)
     if rc != 0:
-        # Try replace in case route already exists
         _, stderr, rc = run_cmd(_route_cmd(r, 'replace'), check=False)
     if rc != 0:
         return jsonify({'error': stderr or 'Failed to add route'}), 500
 
     routes = load_managed_routes()
     routes.append(r)
-    save_managed_routes(routes)  # also syncs systemd service
-
+    save_managed_routes(routes)
     return jsonify({'success': True})
 
 @app.route('/api/routes/<int:idx>', methods=['DELETE'])
@@ -1012,34 +1149,21 @@ def api_delete_route(idx):
     routes = load_managed_routes()
     if idx < 0 or idx >= len(routes):
         return jsonify({'error': 'Route not found'}), 404
-
     r = routes[idx]
     run_cmd(_route_cmd(r, 'del'), check=False)
     routes.pop(idx)
-    save_managed_routes(routes)  # also syncs systemd service
-
+    save_managed_routes(routes)
     return jsonify({'success': True})
 
 @app.route('/api/routes/<int:idx>/persist', methods=['PUT'])
 @require_role('admin', 'operator')
 def api_toggle_route_persist(idx):
-    """Toggle persist flag on an existing route."""
     routes = load_managed_routes()
     if idx < 0 or idx >= len(routes):
         return jsonify({'error': 'Route not found'}), 404
     routes[idx]['persist'] = not routes[idx].get('persist', False)
     save_managed_routes(routes)
     return jsonify({'success': True, 'persist': routes[idx]['persist']})
-
-
-@app.route('/api/system/ip-forwarding', methods=['POST'])
-@require_role('admin')
-def api_enable_ip_forwarding():
-    """Enable IPv4 forwarding at runtime (requires root)."""
-    ok, msg = enable_ip_forwarding()
-    if ok:
-        return jsonify({'success': True, 'message': msg, 'ip_forwarding': True})
-    return jsonify({'success': False, 'error': msg}), 500
 
 
 @app.route('/api/<iface>/throughput')
@@ -1616,42 +1740,20 @@ def api_get_rules(iface, pubkey):
 @app.route('/api/<iface>/peers/<path:pubkey>/rules', methods=['PUT'])
 @require_role('admin', 'operator')
 def api_set_rules(iface, pubkey):
-    data = request.json or {}
-    cfg, peers = parse_wg_conf(iface)
-
-    peer_ip_cidr = data.get('allowed_ips', '')
+    data = request.json; _, peers = parse_wg_conf(iface)
+    peer_ip_cidr = data.get('allowed_ips','')
     if not peer_ip_cidr:
         for p in peers:
             if p.get('PublicKey') == pubkey:
-                peer_ip_cidr = p.get('AllowedIPs', '').split(',')[0].strip(); break
-
-    ipt_rules = data.get('ipt_rules', [])
-
-    # Update AllowedIPs in wg.conf if new value provided
-    new_allowed_ips = data.get('new_allowed_ips', '').strip()
-    if new_allowed_ips:
-        # Validate all CIDRs before touching the file
-        for cidr in new_allowed_ips.split(','):
-            cidr = cidr.strip()
-            if cidr:
-                try:
-                    ipaddress.ip_network(cidr, strict=False)
-                except ValueError:
-                    return jsonify({'error': f'Invalid CIDR: {cidr}'}), 400
-        # Update peer entry
-        for p in peers:
-            if p.get('PublicKey') == pubkey:
-                p['AllowedIPs'] = ', '.join(
-                    c.strip() for c in new_allowed_ips.split(',') if c.strip()
-                )
-                break
+                peer_ip_cidr = p.get('AllowedIPs','').split(',')[0].strip(); break
+    ipt_rules = data.get('ipt_rules',[])
 
     # Save updated rules to metadata
     set_peer_meta(iface, pubkey, {'ipt_rules': ipt_rules, 'allowed_ips': peer_ip_cidr})
 
     # Regenerate wg conf + firewall scripts with updated per-peer rules
+    cfg, peers = parse_wg_conf(iface)
     write_wg_conf(iface, cfg, peers)
-    reload_interface(iface)
 
     # Apply firewall scripts immediately if interface is up
     apply_firewall_scripts(iface)
@@ -1731,18 +1833,10 @@ def api_backup():
         except Exception as e:
             app.logger.warning(f'Backup: error reading WG_DIR: {e}')
 
-        # All wg-manager metadata files:
-        #   wg-manager-wgN.json          — peer metadata + firewall rules
-        #   wg-manager-wgN-iface.json    — interface alias, external port
-        #   wg-manager-wgN-postup.sh     — generated firewall PostUp script
-        #   wg-manager-wgN-postdown.sh   — generated firewall PostDown script
-        #   wg-manager-routes.json       — managed static routes
-        META_PATTERNS = re.compile(
-            r'^wg-manager((-wg\d+(-iface|-postup|-postdown)?)|(-routes))\.(?:json|sh)$'
-        )
+        # wg-manager-wgN.json metadata files
         try:
             for fname in sorted(os.listdir(META_DIR)):
-                if META_PATTERNS.match(fname):
+                if re.match(r'^wg-manager-wg\d+\.json$', fname):
                     full = os.path.join(META_DIR, fname)
                     data = open(full, 'rb').read()
                     zf.writestr(f'metadata/{fname}', data)
@@ -1854,17 +1948,15 @@ def api_restore():
                         except Exception as e:
                             errors.append(f'{fname}: {e}')
 
-            # Restore metadata (JSON + shell scripts)
+            # Restore metadata JSON
             if restore_meta:
                 for name in names:
-                    if name.startswith('metadata/') and (name.endswith('.json') or name.endswith('.sh')):
+                    if name.startswith('metadata/') and name.endswith('.json'):
                         fname = os.path.basename(name)
                         dest  = os.path.join(META_DIR, fname)
                         try:
                             with open(dest, 'wb') as out:
                                 out.write(zf.read(name))
-                            if fname.endswith('.sh'):
-                                os.chmod(dest, 0o750)
                             restored.append(fname)
                         except Exception as e:
                             errors.append(f'{fname}: {e}')
@@ -1980,10 +2072,10 @@ def read_iface_bytes(iface):
 
 
 def traffic_sampler():
-    """Background thread: sample all wg interfaces every 10s, store in SQLite."""
+    """Background thread: sample all wg interfaces every 3s, store in SQLite."""
     import time
     prev = {}  # {iface: (rx, tx, ts)}
-    INTERVAL = 10
+    INTERVAL = 3
 
     while True:
         try:
@@ -2028,14 +2120,6 @@ def traffic_sampler():
 
 if __name__ == '__main__':
     init_db()
-    # Warn immediately if IPv4 forwarding is off — VPN routing won't work without it
-    if check_ip_forwarding() is False:
-        app.logger.warning(
-            '⚠  IPv4 forwarding is DISABLED. '
-            'Peer traffic will not be routed. '
-            'Run: echo 1 > /proc/sys/net/ipv4/ip_forward  '
-            'or use the Settings page to enable it.'
-        )
     import threading
     threading.Thread(target=traffic_sampler, daemon=True, name='traffic-sampler').start()
     threading.Thread(target=_fetch_public_ip, daemon=True, name='ip-detect').start()

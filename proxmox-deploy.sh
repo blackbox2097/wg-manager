@@ -3,7 +3,7 @@
 # Run on Proxmox host as root:
 #   bash proxmox-deploy.sh
 # Or pull directly from GitHub:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/blackbox2097/wg-manager/main/proxmox-deploy.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/wg-manager/main/proxmox-deploy.sh)
 
 set -e
 
@@ -22,8 +22,9 @@ CT_BRIDGE="${CT_BRIDGE:-vmbr0}"           # network bridge
 CT_IP="${CT_IP:-}"                        # "dhcp" or "192.168.1.50/24" — prompted if empty
 CT_GW="${CT_GW:-}"                        # gateway — only needed for static IP
 CT_VLAN="${CT_VLAN:-}"                       # VLAN tag (e.g. 10) — leave empty if none
+CT_DNS="${CT_DNS:-}"                         # DNS server(s) — leave empty for default
 
-REPO="${REPO:-blackbox2097/wg-manager}"
+REPO="${REPO:-YOUR_USERNAME/wg-manager}"
 BRANCH="${BRANCH:-main}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
 TEMPLATE_NAME=""                          # auto-detected
@@ -163,6 +164,12 @@ fi
 
 [[ -n "$CT_VLAN" ]] && NET_CONFIG="${NET_CONFIG},tag=${CT_VLAN}"
 
+# DNS
+if [[ "$NET_CHOICE" == "2" ]] && [[ -z "$CT_DNS" ]]; then
+  echo -n "→ DNS server(s) (e.g. 1.1.1.1 or leave empty for default): "
+  read -r CT_DNS
+fi
+
 # ── Create container ──────────────────────────────────────────────────────────
 echo "→ Creating LXC container (ID: ${CT_ID}, hostname: ${CT_HOSTNAME})..."
 
@@ -174,6 +181,7 @@ pct create "$CT_ID" "$TEMPLATE_PATH" \
   --memory     "$CT_RAM"             \
   --cores      "$CT_CORES"           \
   --net0       "$NET_CONFIG"         \
+  ${CT_DNS:+--nameserver "$CT_DNS"} \
   --ostype     ubuntu                \
   --unprivileged 0                   \
   --features   nesting=1,keyctl=1    \

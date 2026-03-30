@@ -14,7 +14,7 @@ set -e
 CT_ID="${CT_ID:-}"                        # LXC ID (e.g. 200) — auto-picked if empty
 CT_HOSTNAME="${CT_HOSTNAME:-wg-manager}"
 CT_PASSWORD="${CT_PASSWORD:-}"            # root password — prompted if empty
-CT_STORAGE="${CT_STORAGE:-local}"         # storage for rootfs
+CT_STORAGE="${CT_STORAGE:-}"              # storage for rootfs — prompted if empty
 CT_DISK="${CT_DISK:-4}"                   # disk size in GB
 CT_RAM="${CT_RAM:-512}"                   # RAM in MB
 CT_CORES="${CT_CORES:-1}"                 # CPU cores

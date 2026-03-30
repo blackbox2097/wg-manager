@@ -18,7 +18,8 @@ import bcrypt
 import base64
 import hashlib
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from flask import Flask, jsonify, request, send_from_directory, make_response
+import zipfile, io
+from flask import Flask, jsonify, request, send_from_directory, send_file, make_response
 from flask_cors import CORS
 from flask_jwt_extended import (
     JWTManager, create_access_token, get_jwt_identity, get_jwt,
@@ -1169,17 +1170,6 @@ def api_toggle_route_persist(idx):
 @app.route('/api/<iface>/throughput')
 @require_auth
 def api_throughput(iface):
-    def read_iface_bytes(name):
-        try:
-            with open('/proc/net/dev') as f:
-                for line in f:
-                    if line.strip().startswith(name + ':'):
-                        parts = line.split(':')[1].split()
-                        return int(parts[0]), int(parts[8])  # rx_bytes, tx_bytes
-        except Exception:
-            pass
-        return None, None
-
     import time
     rx1, tx1 = read_iface_bytes(iface)
     if rx1 is None:
@@ -1190,18 +1180,12 @@ def api_throughput(iface):
     rx_bps = max(0, rx2 - rx1)
     tx_bps = max(0, tx2 - tx1)
 
-    def fmt(bps):
-        if bps < 1024:           return f'{bps} B/s'
-        if bps < 1024*1024:      return f'{bps/1024:.1f} KB/s'
-        if bps < 1024*1024*1024: return f'{bps/1024/1024:.2f} MB/s'
-        return f'{bps/1024/1024/1024:.2f} GB/s'
-
     return jsonify({
         'iface':   iface,
         'rx_bps':  rx_bps,
         'tx_bps':  tx_bps,
-        'rx_human': fmt(rx_bps),
-        'tx_human': fmt(tx_bps),
+        'rx_human': fmt_bytes(rx_bps),
+        'tx_human': fmt_bytes(tx_bps),
     })
 
 
@@ -1793,8 +1777,7 @@ def api_preview_rules(iface, pubkey):
 # API — Backup / Restore (admin only)
 # ════════════════════════════════════════════════════════════════════════════
 
-import zipfile, io, hashlib
-from flask import send_file
+
 
 BACKUP_VERSION = 1
 

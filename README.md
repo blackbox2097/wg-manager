@@ -60,23 +60,17 @@ lxc list wg-manager
 bash <(curl -fsSL https://raw.githubusercontent.com/blackbox2097/wg-manager/main/proxmox-deploy.sh)
 ```
 
-Skripta automatski:
-- Bira slobodan CT ID
-- Preuzima Ubuntu 22.04 template ako nije prisutan
-- Kreira kontejner sa potrebnim WireGuard privilegijama
-- Pokreće `install.sh` unutar kontejnera
-
-### Opcije (env varijable)
+### Options (env varijable)
 
 ```bash
 CT_ID=210 CT_STORAGE=local-lvm CT_IP=192.168.1.50/24 CT_GW=192.168.1.1 \
   bash <(curl -fsSL .../proxmox-deploy.sh)
 ```
 
-| Varijabla | Default | Opis |
+| Varijable | Default | Description |
 |-----------|---------|------|
 | `CT_ID` | auto | LXC ID |
-| `CT_HOSTNAME` | wg-manager | Hostname kontejnera |
+| `CT_HOSTNAME` | wg-manager | Container Hostname |
 | `CT_STORAGE` | local-lvm | Proxmox storage |
 | `CT_DISK` | 4 | Disk u GB |
 | `CT_RAM` | 512 | RAM u MB |
@@ -84,8 +78,7 @@ CT_ID=210 CT_STORAGE=local-lvm CT_IP=192.168.1.50/24 CT_GW=192.168.1.1 \
 | `CT_IP` | dhcp | IP adresa ili `dhcp` |
 | `CT_GW` | — | Gateway (za statički IP) |
 
-> **Note:** WireGuard kernel modul mora biti učitan na Proxmox hostu.
-> Kontejner dijeli host kernel.
+> **Note:** WireGuard kernel modul must be loaded on Proxmox host.
 
 ---
 

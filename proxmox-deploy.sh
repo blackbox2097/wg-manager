@@ -26,7 +26,7 @@ CT_DNS="${CT_DNS:-}"                         # DNS server(s) — leave empty for
 
 REPO="${REPO:-YOUR_USERNAME/wg-manager}"
 BRANCH="${BRANCH:-main}"
-TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
+TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-}"        # storage for template image — prompted if empty
 TEMPLATE_NAME=""                          # auto-detected
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -106,6 +106,18 @@ if ! lsmod | grep -q wireguard 2>/dev/null; then
 fi
 
 # ── Auto-detect or download Ubuntu 22.04 template ────────────────────────────
+
+# Prompt za template storage ako nije postavljen
+if [[ -z "$TEMPLATE_STORAGE" ]]; then
+  echo ""
+  echo "Available storages for template image:"
+  pvesm status 2>/dev/null | awk 'NR>1 {print "  " $1}' || echo "  (could not list storages)"
+  echo -n "→ Template storage [default: local]: "
+  read -r INPUT_TMPL_STORAGE
+  TEMPLATE_STORAGE="${INPUT_TMPL_STORAGE:-local}"
+fi
+echo "  Template storage: $TEMPLATE_STORAGE"
+
 echo "→ Checking for Ubuntu 22.04 template..."
 pveam update -qq 2>/dev/null || true
 

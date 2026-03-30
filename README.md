@@ -72,11 +72,11 @@ CT_ID=210 CT_STORAGE=local-lvm CT_IP=192.168.1.50/24 CT_GW=192.168.1.1 \
 | `CT_ID` | auto | LXC ID |
 | `CT_HOSTNAME` | wg-manager | Container Hostname |
 | `CT_STORAGE` | local-lvm | Proxmox storage |
-| `CT_DISK` | 4 | Disk u GB |
-| `CT_RAM` | 512 | RAM u MB |
-| `CT_BRIDGE` | vmbr0 | Mrežni bridge |
-| `CT_IP` | dhcp | IP adresa ili `dhcp` |
-| `CT_GW` | — | Gateway (za statički IP) |
+| `CT_DISK` | 4 | Disk in GB |
+| `CT_RAM` | 512 | RAM in MB |
+| `CT_BRIDGE` | vmbr0 | Network bridge |
+| `CT_IP` | dhcp | IP address or `dhcp` |
+| `CT_GW` | — | Gateway (for static IP) |
 
 > **Note:** WireGuard kernel modul must be loaded on Proxmox host.
 

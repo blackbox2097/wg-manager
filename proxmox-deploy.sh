@@ -109,7 +109,8 @@ echo "→ Checking for Ubuntu 22.04 template..."
 pveam update -qq 2>/dev/null || true
 
 # Find latest ubuntu-22.04 template already on storage
-TEMPLATE_NAME=$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null   | awk '{print $1}'   | grep "ubuntu-22.04"   | sort -V | tail -1)
+# pveam list returns "storage:vztmpl/filename" — extract filename only
+TEMPLATE_NAME=$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null   | awk '{print $1}'   | grep "ubuntu-22.04"   | sed 's|.*vztmpl/||'   | sort -V | tail -1)
 
 if [[ -z "$TEMPLATE_NAME" ]]; then
   # Not downloaded yet — find available and grab latest

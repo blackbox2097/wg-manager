@@ -864,10 +864,7 @@ select option{background:var(--bg3)}
     <div class="modal-header"><div class="modal-title" id="modal-peer-title">Add Peer</div><button class="modal-close" onclick="closeModal('modal-peer')">✕</button></div>
     <div class="modal-body">
       <div class="form-section">Identity</div>
-      <div class="form-row">
-        <div class="form-group"><label>Name</label><input id="f-name" placeholder="e.g. laptop-alice"/></div>
-        <div class="form-group"><label>Allowed IPs</label><input id="f-ips" placeholder="auto-assigned"/></div>
-      </div>
+      <div class="form-group"><label>Name</label><input id="f-name" placeholder="e.g. laptop-alice"/></div>
       <div class="form-group">
         <label>Public Key <span class="hint">leave empty to auto-generate</span></label>
         <div class="input-row"><input id="f-pubkey" placeholder="auto-generate"/><button class="btn btn-ghost btn-sm" onclick="generateKeys()">Generate</button></div>
@@ -2611,7 +2608,7 @@ function openAddPeer() {
   document.getElementById('modal-peer-title').textContent='Add Peer';
   document.getElementById('btn-save-peer').textContent='Save Peer';
   document.getElementById('f-pubkey').readOnly=false;
-  ['f-name','f-ips','f-pubkey','f-privkey','f-psk','f-ka','f-dns'].forEach(id=>document.getElementById(id).value='');
+  ['f-name','f-pubkey','f-privkey','f-psk','f-ka','f-dns'].forEach(id=>document.getElementById(id).value='');
   openModal('modal-peer');
 }
 function openEditPeer(pubkey) {
@@ -2621,7 +2618,6 @@ function openEditPeer(pubkey) {
   document.getElementById('modal-peer-title').textContent='Edit Peer';
   document.getElementById('btn-save-peer').textContent='Update';
   document.getElementById('f-name').value=p.name||'';
-  document.getElementById('f-ips').value=p.allowed_ips||'';
   document.getElementById('f-pubkey').value=p.public_key; document.getElementById('f-pubkey').readOnly=true;
   document.getElementById('f-privkey').value='';
   document.getElementById('f-psk').value=p.preshared_key||'';
@@ -2634,7 +2630,7 @@ async function generatePsk(){try{const d=await apiFetch('/api/peers/generate-key
 async function savePeer() {
   const btn=document.getElementById('btn-save-peer'); btn.disabled=true; btn.textContent='Saving…';
   try {
-    const payload={name:document.getElementById('f-name').value.trim(),allowed_ips:document.getElementById('f-ips').value.trim(),public_key:document.getElementById('f-pubkey').value.trim(),private_key:document.getElementById('f-privkey').value.trim(),preshared_key:document.getElementById('f-psk').value.trim(),persistent_keepalive:document.getElementById('f-ka').value.trim(),dns:document.getElementById('f-dns').value.trim()};
+    const payload={name:document.getElementById('f-name').value.trim(),public_key:document.getElementById('f-pubkey').value.trim(),private_key:document.getElementById('f-privkey').value.trim(),preshared_key:document.getElementById('f-psk').value.trim(),persistent_keepalive:document.getElementById('f-ka').value.trim(),dns:document.getElementById('f-dns').value.trim()};
     if (editingPeerKey) {
       await apiFetch(`/api/${activeIface}/peers/${encodeURIComponent(editingPeerKey)}`,{method:'PUT',body:JSON.stringify(payload)});
       toast('Peer updated.','success'); closeModal('modal-peer');

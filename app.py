@@ -490,13 +490,29 @@ def _peer_rules_lines(iface, peer_ip, ipt_rules):
                 lines.append(f'iptables -A $CHAIN_NAME -s {peer_ip} -i $WIREGUARD_INTERFACE -p {p}{dp} -j {action}')
 
         elif rtype == 'ratelimit':
+            # Rate limiting via hashlimit inside the WIREGUARD chain.
+            # Must be BEFORE the catch-all ACCEPT/DROP rules in the chain.
+            # Download = server→peer (out=wg, dst=peer_ip)
+            # Upload   = peer→server (in=wg,  src=peer_ip)
             tag = peer_ip.replace('.', '_')
             if r.get('kbps_dl'):
-                kbps = int(r['kbps_dl'])
-                lines.append(f'iptables -I FORWARD -o $WIREGUARD_INTERFACE -d {peer_ip} -m hashlimit --hashlimit-above {kbps}kb/s --hashlimit-burst {kbps*2} --hashlimit-mode dstip --hashlimit-name rl_dl_{tag} -j DROP')
+                kBps = int(r['kbps_dl'])
+                lines.append(
+                    f'iptables -A $CHAIN_NAME -o $WIREGUARD_INTERFACE -d {peer_ip}'
+                    f' -m hashlimit --hashlimit-above {kBps}kb/s'
+                    f' --hashlimit-burst {kBps * 2}kb'
+                    f' --hashlimit-mode dstip --hashlimit-name rl_dl_{tag}'
+                    f' -j DROP'
+                )
             if r.get('kbps_ul'):
-                kbps = int(r['kbps_ul'])
-                lines.append(f'iptables -I FORWARD -i $WIREGUARD_INTERFACE -s {peer_ip} -m hashlimit --hashlimit-above {kbps}kb/s --hashlimit-burst {kbps*2} --hashlimit-mode srcip --hashlimit-name rl_ul_{tag} -j DROP')
+                kBps = int(r['kbps_ul'])
+                lines.append(
+                    f'iptables -A $CHAIN_NAME -i $WIREGUARD_INTERFACE -s {peer_ip}'
+                    f' -m hashlimit --hashlimit-above {kBps}kb/s'
+                    f' --hashlimit-burst {kBps * 2}kb'
+                    f' --hashlimit-mode srcip --hashlimit-name rl_ul_{tag}'
+                    f' -j DROP'
+                )
 
     return lines
 
@@ -544,18 +560,54 @@ def generate_postup_script(iface, peers, meta):
         'iptables -N $CHAIN_NAME',
         'iptables -A FORWARD -j $CHAIN_NAME',
         '',
-        '# Accept return traffic to WG clients',
-        'iptables -A $CHAIN_NAME -o $WIREGUARD_INTERFACE -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT',
-        '',
-        '# Per-peer rules',
+        '# Per-peer rules (rate limits must come before conntrack ACCEPT)',
     ]
 
+    # Pass 1: ratelimit rules first (must precede ACCEPT and conntrack)
     for peer in peers:
         pk        = peer.get('PublicKey', '')
         pm        = meta.get(pk, {})
         peer_ip   = _peer_ip(peer)
         peer_name = pm.get('name') or peer.get('_name') or pk[:12]
-        ipt_rules = pm.get('ipt_rules', [])
+        for r in pm.get('ipt_rules', []):
+            if r.get('type') == 'ratelimit':
+                tag = peer_ip.replace('.', '_')
+                if r.get('kbps_dl'):
+                    kBps = int(r['kbps_dl'])
+                    lines.append(f'# ratelimit dl {peer_name}')
+                    lines.append(
+                        f'iptables -A $CHAIN_NAME -o $WIREGUARD_INTERFACE -d {peer_ip}'
+                        f' -m hashlimit --hashlimit-above {kBps}kb/s'
+                        f' --hashlimit-burst {kBps * 2}kb'
+                        f' --hashlimit-mode dstip --hashlimit-name rl_dl_{tag}'
+                        f' -j DROP'
+                    )
+                if r.get('kbps_ul'):
+                    kBps = int(r['kbps_ul'])
+                    lines.append(f'# ratelimit ul {peer_name}')
+                    lines.append(
+                        f'iptables -A $CHAIN_NAME -i $WIREGUARD_INTERFACE -s {peer_ip}'
+                        f' -m hashlimit --hashlimit-above {kBps}kb/s'
+                        f' --hashlimit-burst {kBps * 2}kb'
+                        f' --hashlimit-mode srcip --hashlimit-name rl_ul_{tag}'
+                        f' -j DROP'
+                    )
+                lines.append('')
+
+    lines += [
+        '# Accept return traffic to WG clients',
+        'iptables -A $CHAIN_NAME -o $WIREGUARD_INTERFACE -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT',
+        '',
+    ]
+
+    # Pass 2: all other per-peer rules (internet, destination, port, nomasq)
+    lines.append('# Per-peer access rules')
+    for peer in peers:
+        pk        = peer.get('PublicKey', '')
+        pm        = meta.get(pk, {})
+        peer_ip   = _peer_ip(peer)
+        peer_name = pm.get('name') or peer.get('_name') or pk[:12]
+        ipt_rules = [r for r in pm.get('ipt_rules', []) if r.get('type') != 'ratelimit']
         rule_lines = _peer_rules_lines(iface, peer_ip, ipt_rules)
         if rule_lines:
             lines.append(f'# {peer_name}')
@@ -606,6 +658,32 @@ def generate_postdown_script(iface):
         lines.append('# Remove nomasq exceptions')
         lines.extend(nomasq_lines)
         lines.append('')
+    # Collect tc + mangle cleanup for ratelimit rules
+    has_dl_rl = has_ul_rl = False
+    mangle_del = []
+    for peer in peers:
+        pk = peer.get('PublicKey', '')
+        pm = meta.get(pk, {})
+        peer_ip = _peer_ip(peer)
+        for r in pm.get('ipt_rules', []):
+            if r.get('type') == 'ratelimit':
+                mark_ul = abs(hash(f'ul_{peer_ip}')) % 0x7FFF + 1
+                if r.get('kbps_dl'): has_dl_rl = True
+                if r.get('kbps_ul'):
+                    has_ul_rl = True
+                    mangle_del.append(f'iptables -t mangle -D FORWARD -i $WIREGUARD_INTERFACE -s {peer_ip} -j MARK --set-mark {mark_ul} 2>/dev/null || true')
+
+    tc_lines = []
+    if has_dl_rl:
+        tc_lines.append('tc qdisc del dev $WIREGUARD_INTERFACE root 2>/dev/null || true')
+    if has_ul_rl:
+        tc_lines.append('tc qdisc del dev $MASQUERADE_INTERFACE root 2>/dev/null || true')
+    if tc_lines or mangle_del:
+        lines.append('# Remove tc rate limiting qdiscs and mangle marks')
+        lines.extend(tc_lines)
+        lines.extend(mangle_del)
+        lines.append('')
+
     lines += [
         '# Remove MASQUERADE',
         'iptables -t nat -D POSTROUTING -o $MASQUERADE_INTERFACE -j MASQUERADE -s $WIREGUARD_LAN 2>/dev/null || true',

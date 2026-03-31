@@ -26,6 +26,8 @@ from flask_jwt_extended import (
     verify_jwt_in_request, set_access_cookies, unset_jwt_cookies
 )
 
+APP_VERSION = '1.0'
+
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app, supports_credentials=True)
 
@@ -988,6 +990,50 @@ def enable_ip_forwarding():
         return False, str(e)
 
 
+def get_wan_speed_mbps():
+    """Read WAN interface speed in Mbps.
+    Priority: env override → /sys → ethtool → saved user setting."""
+    # 1. Env override
+    override = os.environ.get('WAN_SPEED_MBPS', '').strip()
+    if override:
+        try: return int(override)
+        except Exception: pass
+
+    # 2. /sys/class/net/<iface>/speed
+    try:
+        with open(f'/sys/class/net/{WAN_INTERFACE}/speed') as f:
+            spd = int(f.read().strip())
+            if spd > 0:
+                return spd
+    except Exception:
+        pass
+
+    # 3. ethtool
+    try:
+        out, _, _ = run_cmd(f'ethtool {WAN_INTERFACE} 2>/dev/null | grep -i speed', check=False)
+        for line in out.splitlines():
+            if 'speed' in line.lower():
+                import re as _re
+                m = _re.search(r"(\d+)\s*[Mm]b", line)
+                if m:
+                    return int(m.group(1))
+    except Exception:
+        pass
+
+    # 4. User-saved value
+    try:
+        wan_meta_path = os.path.join(META_DIR, 'wg-manager-wan.json')
+        if os.path.exists(wan_meta_path):
+            d = json.load(open(wan_meta_path))
+            spd = d.get('speed_mbps')
+            if spd and int(spd) > 0:
+                return int(spd)
+    except Exception:
+        pass
+
+    return None
+
+
 @app.route('/api/config')
 @require_auth
 def api_config():
@@ -996,7 +1042,105 @@ def api_config():
         'wg_dir':           WG_DIR,
         'server_public_ip': detect_public_ip(),
         'ip_forwarding':    check_ip_forwarding(),
+        'wan_speed_mbps':   get_wan_speed_mbps(),
+        'version':          APP_VERSION,
     })
+
+@app.route('/api/system/update', methods=['POST'])
+@require_role('admin')
+def api_update():
+    """Pull latest app.py and index.html from GitHub and restart the service."""
+    import threading, urllib.request as _ur
+    REPO   = 'blackbox2097/wg-manager'
+    BRANCH = 'main'
+    RAW    = f'https://raw.githubusercontent.com/{REPO}/{BRANCH}'
+
+    errors = []
+    try:
+        for url, dest in [
+            (f'{RAW}/app.py',              '/opt/wg-manager/app.py'),
+            (f'{RAW}/templates/index.html', '/opt/wg-manager/templates/index.html'),
+        ]:
+            req = _ur.Request(url, headers={'User-Agent': 'wg-manager/' + APP_VERSION})
+            with _ur.urlopen(req, timeout=15) as r:
+                data = r.read()
+            with open(dest, 'wb') as f:
+                f.write(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    def do_restart():
+        import time; time.sleep(1)
+        run_cmd('systemctl restart wg-manager', check=False)
+    threading.Thread(target=do_restart, daemon=True).start()
+    return jsonify({'success': True})
+
+
+@app.route('/api/version')
+@require_auth
+def api_version():
+    """Return current version and check GitHub for latest release."""
+    import urllib.request, json as _json
+    REPO = 'blackbox2097/wg-manager'
+
+    result = {
+        'current':    APP_VERSION,
+        'latest':     None,
+        'up_to_date': None,
+        'changelog':  None,
+        'error':      None,
+    }
+
+    try:
+        req = urllib.request.Request(
+            f'https://api.github.com/repos/{REPO}/releases/latest',
+            headers={'User-Agent': 'wg-manager/' + APP_VERSION, 'Accept': 'application/vnd.github+json'}
+        )
+        with urllib.request.urlopen(req, timeout=6) as r:
+            data = _json.loads(r.read())
+
+        result['latest']     = data.get('tag_name', '').lstrip('v')
+        result['changelog']  = data.get('body', '').strip() or data.get('name', '')
+        result['up_to_date'] = (result['latest'] == APP_VERSION)
+    except Exception as e:
+        result['error'] = str(e)
+
+    return jsonify(result)
+
+
+@app.route('/api/system/restart', methods=['POST'])
+@require_role('admin')
+def api_restart():
+    """Reboot the server."""
+    import threading
+    def do_reboot():
+        import time; time.sleep(1)
+        run_cmd('reboot', check=False)
+    threading.Thread(target=do_reboot, daemon=True).start()
+    return jsonify({'success': True, 'message': 'Rebooting...'})
+
+
+@app.route('/api/system/wan-speed', methods=['POST'])
+@require_role('admin')
+def api_set_wan_speed():
+    """Manually set WAN link speed (stored in meta file)."""
+    data  = request.json or {}
+    speed = data.get('speed_mbps')
+    try:
+        speed = int(speed)
+        if speed <= 0: raise ValueError()
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid speed value'}), 400
+
+    wan_meta_path = os.path.join(META_DIR, 'wg-manager-wan.json')
+    try:
+        with open(wan_meta_path, 'w') as f:
+            json.dump({'speed_mbps': speed}, f)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({'success': True, 'speed_mbps': speed})
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # API — Geo lookup

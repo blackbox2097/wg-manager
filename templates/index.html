@@ -1028,24 +1028,8 @@ select option{background:var(--bg3)}
 
       <!-- Left: options -->
       <div style="padding:18px;border-right:1px solid var(--border);overflow-y:auto">
-        <div class="form-section">Platform</div>
-        <div style="display:flex;gap:8px;margin-bottom:16px">
-          <div class="platform-pill active" id="plt-windows" onclick="selectPlatform('windows')">
-            <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14"><path d="M0 2.5L6.5 1.6V8H0V2.5ZM7.5 1.4L16 0V8H7.5V1.4ZM0 9H6.5V15.4L0 14.5V9ZM7.5 9H16V16L7.5 14.6V9Z"/></svg>
-            Windows
-          </div>
-          <div class="platform-pill" id="plt-linux" onclick="selectPlatform('linux')">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" width="14" height="14"><circle cx="8" cy="8" r="7"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg>
-            Linux / macOS
-          </div>
-          <div class="platform-pill" id="plt-other" onclick="selectPlatform('other')">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M4 7h8M4 10h5"/></svg>
-            Other
-          </div>
-        </div>
 
-
-        <div id="conf-qr-section" style="display:none;flex-direction:column;align-items:center;gap:12px;padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px">
+        <div id="conf-qr-section" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px">
           <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text2);font-family:var(--font-ui);font-weight:700">QR Code</div>
           <div id="conf-qr-canvas" style="background:#fff;padding:10px;border-radius:6px;width:220px;height:220px;box-sizing:border-box;overflow:hidden"></div>
           <div style="font-size:10px;color:var(--text3);text-align:center;line-height:1.5">Skenirajte WireGuard aplikacijom<br>na mobilnom uređaju</div>
@@ -2840,22 +2824,9 @@ async function savePeer() {
 // Client config builder
 // ════════════════════════════════
 
-let confPlatform    = 'windows';
 let confBaseData    = {};   // raw data from add-peer response
 let _pendingConfData = null; // set during new peer creation flow: rules → config
 
-function selectPlatform(p) {
-  confPlatform = p;
-  document.getElementById('plt-windows').classList.toggle('active', p === 'windows');
-  document.getElementById('plt-linux').classList.toggle('active',   p === 'linux');
-  document.getElementById('plt-other').classList.toggle('active',   p === 'other');
-  // Show routing section for all platforms
-  // routing section always visible
-  // Show QR code section only for 'other'
-  const qrSection = document.getElementById('conf-qr-section');
-  if (qrSection) qrSection.style.display = p === 'other' ? 'flex' : 'none';
-  rebuildConf();
-}
 
 async function openExistingPeerConf(pubkey, name, allowedIps) {
   try {
@@ -2878,10 +2849,6 @@ async function openExistingPeerConf(pubkey, name, allowedIps) {
 function openConfModal(peerData) {
   // peerData: {private_key, public_key, allowed_ips, dns, server_pubkey, listen_port, name}
   confBaseData = peerData;
-  confPlatform = 'windows';
-  document.getElementById('plt-windows').classList.add('active');
-  document.getElementById('plt-linux').classList.remove('active');
-  document.getElementById('plt-other').classList.remove('active');
   const routingSection = document.getElementById('conf-routing-section');
   if (routingSection) routingSection.style.display = '';
   const cRoutes = document.getElementById('conf-routes'); if(cRoutes) cRoutes.value = '';
@@ -2907,10 +2874,9 @@ function scheduleQrUpdate(conf) {
 }
 
 function rebuildConf() {
-  const d            = confBaseData;
-  const platform     = confPlatform;
-  const routesRaw    = document.getElementById('conf-routes')?.value || '';
-  const dnsOverride  = document.getElementById('conf-dns-override')?.value.trim() || '';
+  const d         = confBaseData;
+  const routesRaw = document.getElementById('conf-routes')?.value || '';
+  const dnsOverride = document.getElementById('conf-dns-override')?.value.trim() || '';
 
   const routes = routesRaw.replace(/\r/g, '').split('\n')
     .flatMap(r => r.split(','))
@@ -2918,58 +2884,25 @@ function rebuildConf() {
     .filter(r => r.length > 0 && r.charCodeAt(0) >= 48 && r.charCodeAt(0) <= 57);
 
   const dns = dnsOverride || d.dns || '';
-
-  if (platform === 'other') {
-    let conf = '';
-    conf += '[Interface]\n';
-    conf += 'PrivateKey = ' + (d.private_key || '(private key)') + '\n';
-    const clientAddr1 = (d.allowed_ips || '10.0.0.2/32').split(',')[0].trim();
-  conf += 'Address = ' + clientAddr1 + '\n';
-    if (dns) conf += 'DNS = ' + dns + '\n';
-    conf += '\n[Peer]\n';
-    conf += 'PublicKey = '           + (d.server_pubkey || '(server public key)') + '\n';
-    conf += 'Endpoint = '            + (d.endpoint || '<SERVER_IP>:' + (d.listen_port || '51820')) + '\n';
-    const allowedIPsOther = routes.length > 0 ? routes.join(', ') : '0.0.0.0/0, ::/0';
-    conf += 'AllowedIPs = ' + allowedIPsOther + '\n';
-    conf += 'PersistentKeepalive = 25\n';
-    if (d.preshared_key) conf += 'PresharedKey = ' + d.preshared_key + '\n';
-    clientConfData = conf;
-    clientConfName = (d.name || 'client').replace(/\s+/g, '-').toLowerCase();
-    const confBox1 = document.getElementById('client-conf-box'); if(confBox1) confBox1.textContent = conf;
-    // Generate QR for 'other' platform (debounced to avoid twitching)
-    scheduleQrUpdate(conf);
-    return;
-  }
-
-  // Windows: no PostUp/PreDown scripts — split tunneling via AllowedIPs only
-
-
-
-  let conf = '';
-  conf += '[Interface]\n';
-  conf += 'PrivateKey = ' + (d.private_key || '(private key)') + '\n';
   const clientAddr = (d.allowed_ips || '10.0.0.2/32').split(',')[0].trim();
+  const allowedIPs = routes.length > 0 ? routes.join(', ') : '0.0.0.0/0, ::/0';
+
+  let conf = '[Interface]\n';
+  conf += 'PrivateKey = ' + (d.private_key || '(private key)') + '\n';
   conf += 'Address = ' + clientAddr + '\n';
   if (dns) conf += 'DNS = ' + dns + '\n';
-
-
   conf += '\n[Peer]\n';
-  conf += 'PublicKey = '           + (d.server_pubkey || '(server public key)') + '\n';
-  conf += 'Endpoint = '            + (d.endpoint || '<SERVER_IP>:' + (d.listen_port || '51820')) + '\n';
-  // AllowedIPs: if split-tunnel routes defined, use those; otherwise full tunnel
-  const allowedIPs = routes.length > 0 ? routes.join(', ') : '0.0.0.0/0, ::/0';
+  conf += 'PublicKey = ' + (d.server_pubkey || '(server public key)') + '\n';
+  conf += 'Endpoint = ' + (d.endpoint || '<SERVER_IP>:' + (d.listen_port || '51820')) + '\n';
   conf += 'AllowedIPs = ' + allowedIPs + '\n';
   conf += 'PersistentKeepalive = 25\n';
   if (d.preshared_key) conf += 'PresharedKey = ' + d.preshared_key + '\n';
 
   clientConfData = conf;
   clientConfName = (d.name || 'client').replace(/\s+/g, '-').toLowerCase();
-  const confBox2 = document.getElementById('client-conf-box'); if(confBox2) confBox2.textContent = conf;
-
-}
-function cidrToMask(prefix) {
-  const mask = (0xFFFFFFFF << (32 - prefix)) >>> 0;
-  return [(mask >>> 24) & 0xFF, (mask >>> 16) & 0xFF, (mask >>> 8) & 0xFF, mask & 0xFF].join('.');
+  const confBox = document.getElementById('client-conf-box');
+  if (confBox) confBox.textContent = conf;
+  scheduleQrUpdate(conf);
 }
 
 function copyConf() { navigator.clipboard.writeText(clientConfData).then(()=>toast('Copied!','success')); }

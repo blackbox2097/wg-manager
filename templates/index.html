@@ -1044,51 +1044,19 @@ select option{background:var(--bg3)}
           </div>
         </div>
 
-        <!-- Windows PS warning — shown only for windows platform -->
-        <div id="conf-win-warning" style="display:none;padding:10px 12px;background:var(--yellow-bg);border:1px solid rgba(255,209,102,.25);border-radius:var(--radius);border-left:3px solid var(--yellow);margin-bottom:14px;font-size:11px;line-height:1.7">
-          <div style="font-weight:700;color:var(--yellow);margin-bottom:5px">⚠ WireGuard Windows — PowerShell ExecutionPolicy</div>
-          <div style="color:var(--text2)">
-            PostUp/PreDown PowerShell skripte zahtevaju da WireGuard ima dozvolu za pokretanje skripti.<br/>
-            Pokrenite u <strong style="color:var(--text)">PowerShell (Administrator)</strong>:
-          </div>
-          <div style="margin:7px 0;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:7px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--green);position:relative">
-            Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned
-            <button onclick="navigator.clipboard.writeText('Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned').then(()=>toast('Copied!','success'))" style="position:absolute;right:6px;top:5px;background:var(--bg2);border:1px solid var(--border2);border-radius:3px;color:var(--text2);cursor:pointer;font-size:9.5px;padding:2px 7px;font-family:var(--font-mono)">Copy</button>
-          </div>
-          <div style="color:var(--text2)">
-            Ili ako koristite WireGuard sa <strong style="color:var(--text)">SYSTEM nalogom</strong> (servis):
-          </div>
-          <div style="margin:7px 0;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:7px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--green);position:relative">
-            Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy Unrestricted
-            <button onclick="navigator.clipboard.writeText('Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy Unrestricted').then(()=>toast('Copied!','success'))" style="position:absolute;right:6px;top:5px;background:var(--bg2);border:1px solid var(--border2);border-radius:3px;color:var(--text2);cursor:pointer;font-size:9.5px;padding:2px 7px;font-family:var(--font-mono)">Copy</button>
-          </div>
-          <div style="color:var(--text3);font-size:10px;margin-top:4px">
-            Podešavanje se primenjuje jednom per mašina. Nakon toga WireGuard može da izvršava PostUp/PreDown skripte.
-          </div>
-        </div>
 
         <div id="conf-qr-section" style="display:none;flex-direction:column;align-items:center;gap:12px;padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px">
           <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text2);font-family:var(--font-ui);font-weight:700">QR Code</div>
-          <div id="conf-qr-canvas" style="background:#fff;padding:10px;border-radius:6px"></div>
+          <div id="conf-qr-canvas" style="background:#fff;padding:10px;border-radius:6px;width:220px;height:220px;box-sizing:border-box;overflow:hidden"></div>
           <div style="font-size:10px;color:var(--text3);text-align:center;line-height:1.5">Skenirajte WireGuard aplikacijom<br>na mobilnom uređaju</div>
         </div>
 
         <div id="conf-routing-section">
         <div class="form-section">Routing</div>
-        <div style="margin-bottom:12px">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin-bottom:8px">
-            <input type="checkbox" id="conf-default-route" style="width:auto;accent-color:var(--green)" onchange="rebuildConf()"/>
-            Add default route (0.0.0.0/0) with metric 9999
-          </label>
-          <div style="font-size:9.5px;color:var(--text3);padding-left:22px;line-height:1.5">
-            Routes all internet traffic through the tunnel. Recommended for full-tunnel setups.
-          </div>
-        </div>
-
         <div class="form-group">
-          <label>Split-tunnel routes <span class="hint">one per line, CIDR</span></label>
+          <label>Split-tunnel routes <span class="hint">one per line, CIDR — leave empty for full tunnel</span></label>
           <textarea id="conf-routes" rows="6" placeholder="192.168.0.0/24&#10;192.168.4.0/24&#10;192.168.11.0/24" oninput="rebuildConf()" style="font-size:11.5px;line-height:1.6"></textarea>
-          <div style="font-size:9.5px;color:var(--text3);margin-top:4px">These subnets will be routed through the WireGuard tunnel on the client machine.</div>
+          <div style="font-size:9.5px;color:var(--text3);margin-top:4px">If subnets are specified, only those will be routed through the tunnel (sets AllowedIPs). Leave empty to route all traffic (0.0.0.0/0).</div>
         </div>
 
         <div class="form-group">
@@ -2881,10 +2849,8 @@ function selectPlatform(p) {
   document.getElementById('plt-windows').classList.toggle('active', p === 'windows');
   document.getElementById('plt-linux').classList.toggle('active',   p === 'linux');
   document.getElementById('plt-other').classList.toggle('active',   p === 'other');
-  document.getElementById('conf-win-warning').style.display = p === 'windows' ? '' : 'none';
-  // Hide routing section for 'other' — clean config only
-  const routingSection = document.getElementById('conf-routing-section');
-  if (routingSection) routingSection.style.display = p === 'other' ? 'none' : '';
+  // Show routing section for all platforms
+  // routing section always visible
   // Show QR code section only for 'other'
   const qrSection = document.getElementById('conf-qr-section');
   if (qrSection) qrSection.style.display = p === 'other' ? 'flex' : 'none';
@@ -2918,18 +2884,31 @@ function openConfModal(peerData) {
   document.getElementById('plt-other').classList.remove('active');
   const routingSection = document.getElementById('conf-routing-section');
   if (routingSection) routingSection.style.display = '';
-  document.getElementById('conf-default-route').checked = false;
-  document.getElementById('conf-routes').value = '';
-  document.getElementById('conf-dns-override').value = '';
-  document.getElementById('conf-win-warning').style.display = '';  // windows is default
+  const cRoutes = document.getElementById('conf-routes'); if(cRoutes) cRoutes.value = '';
+  const cDns = document.getElementById('conf-dns-override'); if(cDns) cDns.value = '';
   rebuildConf();
   openModal('modal-conf');
+}
+
+let _qrTimer = null;
+function scheduleQrUpdate(conf) {
+  clearTimeout(_qrTimer);
+  _qrTimer = setTimeout(() => {
+    const qrCanvas = document.getElementById('conf-qr-canvas');
+    if (!qrCanvas || !conf.trim()) return;
+    qrCanvas.innerHTML = '';
+    try {
+      new QRCode(qrCanvas, {text: conf.trim(), width: 200, height: 200,
+        colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M});
+    } catch(e) {
+      qrCanvas.innerHTML = '<div style="color:#f66;font-size:10px;padding:10px">QR error: ' + e.message + '</div>';
+    }
+  }, 600);
 }
 
 function rebuildConf() {
   const d            = confBaseData;
   const platform     = confPlatform;
-  const defaultRoute = document.getElementById('conf-default-route')?.checked;
   const routesRaw    = document.getElementById('conf-routes')?.value || '';
   const dnsOverride  = document.getElementById('conf-dns-override')?.value.trim() || '';
 
@@ -2939,8 +2918,6 @@ function rebuildConf() {
     .filter(r => r.length > 0 && r.charCodeAt(0) >= 48 && r.charCodeAt(0) <= 57);
 
   const dns = dnsOverride || d.dns || '';
-
-  let postUp = '', preDown = '';
 
   if (platform === 'other') {
     let conf = '';
@@ -2952,65 +2929,21 @@ function rebuildConf() {
     conf += '\n[Peer]\n';
     conf += 'PublicKey = '           + (d.server_pubkey || '(server public key)') + '\n';
     conf += 'Endpoint = '            + (d.endpoint || '<SERVER_IP>:' + (d.listen_port || '51820')) + '\n';
-    conf += 'AllowedIPs = 0.0.0.0/0, ::/0\n';
+    const allowedIPsOther = routes.length > 0 ? routes.join(', ') : '0.0.0.0/0, ::/0';
+    conf += 'AllowedIPs = ' + allowedIPsOther + '\n';
     conf += 'PersistentKeepalive = 25\n';
     if (d.preshared_key) conf += 'PresharedKey = ' + d.preshared_key + '\n';
     clientConfData = conf;
     clientConfName = (d.name || 'client').replace(/\s+/g, '-').toLowerCase();
-    document.getElementById('client-conf-box').textContent = conf;
-    // Generate QR for 'other' platform
-    if (confPlatform === 'other') {
-      const qrCanvas = document.getElementById('conf-qr-canvas');
-      if (qrCanvas && conf.trim()) {
-        qrCanvas.innerHTML = '';
-        try {
-          new QRCode(qrCanvas, {text: conf.trim(), width: 200, height: 200,
-            colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M});
-        } catch(e) {
-          qrCanvas.innerHTML = '<div style="color:#f66;font-size:10px;padding:10px">QR error: ' + e.message + '</div>';
-        }
-      }
-    }
+    const confBox1 = document.getElementById('client-conf-box'); if(confBox1) confBox1.textContent = conf;
+    // Generate QR for 'other' platform (debounced to avoid twitching)
+    scheduleQrUpdate(conf);
     return;
   }
 
-  if (platform === 'windows' && (defaultRoute || routes.length)) {
-    const parts_up   = [];
-    const parts_down = [];
-    parts_up.push('$wgInterface = Get-NetAdapter -Name %WIREGUARD_TUNNEL_NAME%');
-    parts_down.push('$wgInterface = Get-NetAdapter -Name %WIREGUARD_TUNNEL_NAME%');
-    if (defaultRoute) {
-      parts_up.push('route add 0.0.0.0 mask 0.0.0.0 0.0.0.0 IF $wgInterface.ifIndex metric 9999');
-      parts_up.push('Set-NetIPInterface -InterfaceIndex $wgInterface.ifIndex -InterfaceMetric 9999');
-      parts_down.push('route delete 0.0.0.0 mask 0.0.0.0 0.0.0.0 if $wgInterface.ifIndex metric 9999');
-      parts_down.push('Set-NetIPInterface -InterfaceIndex $wgInterface.ifIndex -InterfaceMetric 9999');
-    }
-    for (const route of routes) {
-      const parts = route.split('/');
-      const net   = parts[0];
-      const mask  = parts[1] ? cidrToMask(parseInt(parts[1])) : '255.255.255.0';
-      parts_up.push('route add '    + net + ' mask ' + mask + ' 0.0.0.0 IF $wgInterface.ifIndex');
-      parts_down.push('route delete ' + net + ' mask ' + mask + ' 0.0.0.0 if $wgInterface.ifIndex');
-    }
-    postUp  = 'powershell -command "' + parts_up.join('; ')   + ';"';
-    preDown = 'powershell -command "' + parts_down.join('; ') + ';"';
-  }
+  // Windows: no PostUp/PreDown scripts — split tunneling via AllowedIPs only
 
-  if (platform === 'linux' && (defaultRoute || routes.length)) {
-    const iface     = '%i';
-    const up_cmds   = [];
-    const down_cmds = [];
-    if (defaultRoute) {
-      up_cmds.push('ip route add default dev ' + iface + ' metric 9999');
-      down_cmds.push('ip route del default dev ' + iface + ' metric 9999');
-    }
-    for (const route of routes) {
-      up_cmds.push('ip route add ' + route + ' dev ' + iface);
-      down_cmds.push('ip route del ' + route + ' dev ' + iface);
-    }
-    postUp  = up_cmds.join('; ');
-    preDown = down_cmds.join('; ');
-  }
+
 
   let conf = '';
   conf += '[Interface]\n';
@@ -3018,41 +2951,21 @@ function rebuildConf() {
   const clientAddr = (d.allowed_ips || '10.0.0.2/32').split(',')[0].trim();
   conf += 'Address = ' + clientAddr + '\n';
   if (dns) conf += 'DNS = ' + dns + '\n';
-  if ((defaultRoute || routes.length) && (platform === 'windows' || platform === 'linux')) {
-    conf += 'Table = off\n';
-  }
-  if (postUp)  conf += 'PostUp = '  + postUp  + '\n';
-  if (preDown) conf += 'PreDown = ' + preDown + '\n';
+
 
   conf += '\n[Peer]\n';
   conf += 'PublicKey = '           + (d.server_pubkey || '(server public key)') + '\n';
   conf += 'Endpoint = '            + (d.endpoint || '<SERVER_IP>:' + (d.listen_port || '51820')) + '\n';
-  conf += 'AllowedIPs = 0.0.0.0/0, ::/0\n';
+  // AllowedIPs: if split-tunnel routes defined, use those; otherwise full tunnel
+  const allowedIPs = routes.length > 0 ? routes.join(', ') : '0.0.0.0/0, ::/0';
+  conf += 'AllowedIPs = ' + allowedIPs + '\n';
   conf += 'PersistentKeepalive = 25\n';
   if (d.preshared_key) conf += 'PresharedKey = ' + d.preshared_key + '\n';
 
   clientConfData = conf;
   clientConfName = (d.name || 'client').replace(/\s+/g, '-').toLowerCase();
-  document.getElementById('client-conf-box').textContent = conf;
-  // Regenerate QR if 'other' platform is selected
-  if (confPlatform === 'other') {
-    const qrCanvas = document.getElementById('conf-qr-canvas');
-    if (qrCanvas && conf && conf.trim()) {
-      qrCanvas.innerHTML = '';
-      try {
-        new QRCode(qrCanvas, {
-          text:         conf.trim(),
-          width:        200,
-          height:       200,
-          colorDark:    '#000000',
-          colorLight:   '#ffffff',
-          correctLevel: QRCode.CorrectLevel.M,
-        });
-      } catch(e) {
-        qrCanvas.innerHTML = '<div style="color:#f66;font-size:10px;padding:10px">QR error: ' + e.message + '</div>';
-      }
-    }
-  }
+  const confBox2 = document.getElementById('client-conf-box'); if(confBox2) confBox2.textContent = conf;
+
 }
 function cidrToMask(prefix) {
   const mask = (0xFFFFFFFF << (32 - prefix)) >>> 0;

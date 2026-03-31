@@ -37,6 +37,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .nav-item{display:flex;align-items:center;gap:10px;padding:9px 18px;cursor:pointer;color:var(--text2);transition:color var(--trans),background var(--trans);font-size:12.5px;font-weight:500;border-left:2px solid transparent;margin:1px 0}
 .nav-item:hover{color:var(--text);background:rgba(255,255,255,.03)}
 .nav-item.active{color:var(--green);background:var(--green-bg);border-left-color:var(--green)}
+.nav-badge{display:inline-block;background:var(--yellow);color:#000;font-size:8px;font-weight:700;padding:1px 5px;border-radius:20px;margin-left:auto;line-height:14px}
 .nav-item svg{width:14px;height:14px;flex-shrink:0}
 
 /* Interface switcher in sidebar */
@@ -363,6 +364,7 @@ select option{background:var(--bg3)}
     <div class="nav-item" id="nav-settings" onclick="switchView('settings',this)" style="display:none">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4"/></svg>
       Settings
+      <span id="nav-settings-badge" class="nav-badge" style="display:none">NEW</span>
     </div>
 
     <!-- Interface-specific nav (hidden on dashboard) -->
@@ -1464,6 +1466,7 @@ function onAuthSuccess(user) {
   document.getElementById('nav-backup').style.display      = user.role==='admin' ? '' : 'none';
   document.getElementById('nav-routes').style.display      = (user.role==='admin'||user.role==='operator') ? '' : 'none';
   document.getElementById('nav-settings').style.display    = user.role==='admin' ? '' : 'none';
+  if (user.role === 'admin') checkVersionSilent();
   const expBtn = document.getElementById('btn-export-peers');
   if (expBtn) expBtn.style.display = user.role==='admin' ? '' : 'none';
   document.getElementById('um-manage-users').style.display = user.role==='admin' ? '' : 'none';
@@ -2229,7 +2232,7 @@ function switchView(name, el) {
   if (name==='users')     loadUsers();
   if (name==='backup')    loadBackupManifest();
   if (name==='routes')    loadRoutes();
-  if (name==='settings')  loadSettings();
+  if (name==='settings') { loadSettings(); const b=document.getElementById('nav-settings-badge'); if(b) b.style.display='none'; }
   if (name==='log')       initLogView();
   if (name!=='log')       stopLogFollow();
   if (name==='geo')       loadGeo();
@@ -3251,6 +3254,16 @@ async function deleteRoute(idx) {
 }
 
 // ═══ Settings ═══
+async function checkVersionSilent() {
+  try {
+    const d = await apiFetch('/api/version');
+    if (d.latest && !d.up_to_date) {
+      const badge = document.getElementById('nav-settings-badge');
+      if (badge) badge.style.display = '';
+    }
+  } catch(e) {}
+}
+
 async function checkVersion() {
   const statusEl   = document.getElementById('s-version-status');
   const labelEl    = document.getElementById('s-version-label');

@@ -898,10 +898,6 @@ select option{background:var(--bg3)}
 
       <!-- Left: options -->
       <div style="padding:18px;border-right:1px solid var(--border);overflow-y:auto">
-        <div style="font-size:11px;color:var(--yellow);background:var(--red-bg);border:1px solid rgba(255,209,102,.2);border-radius:var(--radius);padding:8px 11px;margin-bottom:16px">
-          ⚠ Save the private key now — it won't be shown again!
-        </div>
-
         <div class="form-section">Platform</div>
         <div style="display:flex;gap:8px;margin-bottom:16px">
           <div class="platform-pill active" id="plt-windows" onclick="selectPlatform('windows')">
@@ -1093,7 +1089,7 @@ select option{background:var(--bg3)}
       <div>
         <div class="modal-title"><span id="rules-modal-title-prefix">Edit Rules —</span> <span id="rules-peer-name" style="color:var(--blue)"></span></div>
       </div>
-      <button class="modal-close" onclick="closeModal('modal-rules')">✕</button>
+      <button class="modal-close" onclick="closeModal('modal-rules');_pendingConfData=null;">✕</button>
     </div>
     <div style="padding:10px 18px;border-bottom:1px solid var(--border)" id="rules-allowed-ips-row">
       <div style="display:flex;align-items:center;gap:8px">
@@ -1143,7 +1139,7 @@ select option{background:var(--bg3)}
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="12" height="12" style="vertical-align:middle;margin-right:4px"><rect x="3" y="7" width="10" height="7" rx="1"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>
         Read-only — viewing rules only
       </span>
-      <button class="btn btn-ghost" onclick="closeModal('modal-rules')">Close</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-rules');_pendingConfData=null;">Close</button>
       <button class="btn btn-primary" id="rules-modal-save-btn" onclick="saveRules()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 9l4 4 8-8"/></svg>Save Rules</button>
     </div>
   </div>
@@ -2637,24 +2633,21 @@ async function savePeer() {
     } else {
       const res=await apiFetch(`/api/${activeIface}/peers`,{method:'POST',body:JSON.stringify(payload)});
       toast(res.message,'success'); closeModal('modal-peer');
-      if (res.client_config || res.private_key) {
-        // Fetch server public key for the config
-        let serverPubkey = '';
-        try {
-          const st = await apiFetch(`/api/${activeIface}/status`);
-          // server pubkey isn't directly in status — use what we got from add response
-          // or fall back to placeholder
-        } catch(e) {}
-        openConfModal({
-          private_key:   res.private_key || '',
-          allowed_ips:   payload.allowed_ips || res.allowed_ips || '',
-          dns:           payload.dns || '',
-          server_pubkey: res.server_pubkey || '',
-          listen_port:   res.listen_port || '',
-          preshared_key: payload.preshared_key || '',
-          name:          payload.name || '',
-          endpoint:      res.endpoint || (serverPublicIp ? serverPublicIp + ':' + (res.listen_port||'51820') : ''),
-        });
+      await refreshActiveIface();
+      // Store config data for after rules are saved
+      _pendingConfData = {
+        private_key:   res.private_key || '',
+        allowed_ips:   res.allowed_ips || '',
+        dns:           payload.dns || '',
+        server_pubkey: res.server_pubkey || '',
+        listen_port:   res.listen_port || '',
+        preshared_key: payload.preshared_key || '',
+        name:          payload.name || '',
+        endpoint:      res.endpoint || (serverPublicIp ? serverPublicIp + ':' + (res.listen_port||'51820') : ''),
+      };
+      // Open rules editor for new peer
+      if (res.public_key) {
+        await openRules(res.public_key, payload.name || 'New Peer', res.allowed_ips || '');
       }
     }
     refreshActiveIface();
@@ -2667,6 +2660,7 @@ async function savePeer() {
 
 let confPlatform    = 'windows';
 let confBaseData    = {};   // raw data from add-peer response
+let _pendingConfData = null; // set during new peer creation flow: rules → config
 
 function selectPlatform(p) {
   confPlatform = p;
@@ -3083,6 +3077,14 @@ async function openRules(pubkey, name, allowedIps, readonly) {
     currentRules = d.ipt_rules || [];
   } catch(e) { currentRules = []; }
 
+  // Reset rule type selector to default
+  currentRuleType = 'port';
+  currentAction   = 'ACCEPT';
+  document.querySelectorAll('.rtb').forEach(b => b.classList.remove('selected'));
+  const defaultRtb = document.querySelector('.rtb[data-type="port"]');
+  if (defaultRtb) defaultRtb.classList.add('selected');
+  renderRuleForm();
+
   const isReadonly = readonly || currentUser?.role === 'readonly';
 
   // Title prefix
@@ -3200,6 +3202,12 @@ async function saveRules(){
     toast('Firewall rules saved.','success');
     closeModal('modal-rules');
     refreshActiveIface();
+    // If this is part of new peer creation flow, open config modal now
+    if (_pendingConfData) {
+      const cfg = _pendingConfData;
+      _pendingConfData = null;
+      openConfModal(cfg);
+    }
   }catch(e){toast(e.message,'error');}
 }
 

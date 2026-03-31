@@ -1764,22 +1764,28 @@ def api_export_peers(iface):
 @validate_iface_or_wan
 def api_traffic_live(iface):
     import time
-    rx1, tx1 = read_iface_bytes(iface)
-    if rx1 is None:
-        return jsonify({'rx_bps': 0, 'tx_bps': 0, 'rx_human': '0 B/s', 'tx_human': '0 B/s'})
-    time.sleep(1)
-    rx2, tx2 = read_iface_bytes(iface)
-    rx_bps = max(0, rx2 - rx1)
-    tx_bps = max(0, tx2 - tx1)
+    # Use the latest sample from the traffic_sampler DB (updated every 3s)
+    # This avoids blocking sleep() and gives consistent values with the chart
+    now = int(time.time())
+    with get_db() as db:
+        row = db.execute(
+            'SELECT rx_bps, tx_bps FROM traffic_samples '
+            'WHERE iface=? AND ts >= ? ORDER BY ts DESC LIMIT 1',
+            (iface, now - 30)  # sample must be within last 30s
+        ).fetchone()
 
-    def fmt(b):
-        if b < 1024:             return f'{b} B/s'
-        if b < 1024**2:          return f'{b/1024:.1f} KB/s'
-        if b < 1024**3:          return f'{b/1024**2:.2f} MB/s'
-        return f'{b/1024**3:.2f} GB/s'
+    if row:
+        rx_bps = row['rx_bps']
+        tx_bps = row['tx_bps']
+    else:
+        rx_bps = tx_bps = 0
 
-    return jsonify({'rx_bps': rx_bps, 'tx_bps': tx_bps,
-                    'rx_human': fmt(rx_bps), 'tx_human': fmt(tx_bps)})
+    return jsonify({
+        'rx_bps':   rx_bps,
+        'tx_bps':   tx_bps,
+        'rx_human': fmt_bytes(rx_bps) + '/s',
+        'tx_human': fmt_bytes(tx_bps) + '/s',
+    })
 
 
 @app.route('/api/<iface>/traffic/history')

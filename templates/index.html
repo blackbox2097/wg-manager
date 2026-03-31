@@ -1677,7 +1677,7 @@ function initTrafficView() {
   stopTrafficPolling();
   loadTrafficChart();
   pollTrafficLive();
-  trafficLiveTimer  = setInterval(pollTrafficLive,  2000);
+  trafficLiveTimer  = setInterval(pollTrafficLive,  3000);
   trafficChartTimer = setInterval(loadTrafficChart, 30000);
   loadTrafficStats();
 }
@@ -1694,12 +1694,20 @@ function onTrafficWindowChange() {
 // Stop polling when leaving traffic view
 const _origSwitchView = switchView;
 
+function bpsToMbps(bps) {
+  if (!bps && bps !== 0) return '—';
+  const mbps = bps / 1000000 * 8;
+  if (mbps < 0.01) return (bps / 1000 * 8).toFixed(2) + ' Kbps';
+  if (mbps < 10)   return mbps.toFixed(2) + ' Mbps';
+  return mbps.toFixed(1) + ' Mbps';
+}
+
 async function pollTrafficLive() {
   if (!activeIface) return;
   try {
     const d = await apiFetch('/api/' + activeIface + '/traffic/live');
-    document.getElementById('tst-rx-live').textContent = d.tx_human;
-    document.getElementById('tst-tx-live').textContent = d.rx_human;
+    document.getElementById('tst-rx-live').textContent = bpsToMbps(d.tx_bps);
+    document.getElementById('tst-tx-live').textContent = bpsToMbps(d.rx_bps);
   } catch(e) {}
 }
 

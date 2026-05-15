@@ -1792,6 +1792,10 @@ def traffic_sampler():
         except Exception:
             ifaces = []
 
+        # Also sample WAN interface for dashboard throughput graph
+        if WAN_INTERFACE and WAN_INTERFACE not in ifaces:
+            ifaces.append(WAN_INTERFACE)
+
         now = int(time.time())
 
         for iface in ifaces:

@@ -10,6 +10,7 @@ import json
 import sqlite3
 import secrets
 import ipaddress
+import shlex
 import subprocess
 from datetime import datetime, timezone, timedelta
 from functools import wraps
@@ -18,15 +19,12 @@ import bcrypt
 import base64
 import hashlib
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-import zipfile, io
-from flask import Flask, jsonify, request, send_from_directory, send_file, make_response
+from flask import Flask, jsonify, request, send_from_directory, make_response
 from flask_cors import CORS
 from flask_jwt_extended import (
     JWTManager, create_access_token, get_jwt_identity, get_jwt,
     verify_jwt_in_request, set_access_cookies, unset_jwt_cookies
 )
-
-APP_VERSION = '1.0'
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app, supports_credentials=True)
@@ -138,28 +136,6 @@ def require_auth(fn):
         return fn(*args, **kwargs)
     return wrapper
 
-def validate_iface(fn):
-    """Decorator: validate iface URL parameter is a safe wgN name."""
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        iface = kwargs.get('iface', '')
-        if not re.match(r'^wg\d+$', iface):
-            return jsonify({'error': 'Invalid interface name'}), 400
-        return fn(*args, **kwargs)
-    return wrapper
-
-def validate_iface_or_wan(fn):
-    """Decorator: allow wgN interfaces AND the detected WAN interface (read-only endpoints)."""
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        iface = kwargs.get('iface', '')
-        if re.match(r'^wg\d+$', iface):
-            return fn(*args, **kwargs)
-        if iface == WAN_INTERFACE and re.match(r'^[a-zA-Z0-9._\-]+$', iface):
-            return fn(*args, **kwargs)
-        return jsonify({'error': 'Invalid interface name'}), 400
-    return wrapper
-
 def refresh_token_if_needed(response):
     """Silently refresh token on every authenticated request (sliding window)."""
     try:
@@ -187,7 +163,7 @@ def detect_wan_interface():
     if override:
         return override
     try:
-        r = subprocess.run('ip route get 8.8.8.8', shell=True,
+        r = subprocess.run(['ip', 'route', 'get', '8.8.8.8'],
                            capture_output=True, text=True, timeout=5)
         for token in r.stdout.split():
             if token not in ('8.8.8.8','via','dev','src','uid','cache') \
@@ -293,24 +269,39 @@ def delete_peer_key(iface, pubkey):
 
 # ── Shell helper ──────────────────────────────────────────────────────────────
 
-def _validate_iface(iface):
-    """Raise ValueError if iface is not a safe wgN name."""
-    if not re.match(r'^wg\d+$', iface):
-        raise ValueError(f'Invalid interface name: {iface}')
-
-def _safe_shell_str(s):
-    """Escape a string for safe use inside a double-quoted shell argument."""
-    return s.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
+# Shell metacharacters that require bash — process substitution, pipes, redirects
+_SHELL_META = re.compile(r'[|&;<>`$()]')
 
 def run_cmd(cmd, check=True):
+    """Run a shell command.
+    - list  → execve directly, no shell (preferred)
+    - str with shell metachar → bash required (e.g. process substitution)
+    - str without metachar → shlex.split + execve, no shell spawned
+    """
     try:
-        r = subprocess.run(cmd, shell=True, capture_output=True, text=True,
-                           timeout=15, executable='/bin/bash')
+        if isinstance(cmd, list):
+            r = subprocess.run(cmd, shell=False, capture_output=True,
+                               text=True, timeout=15)
+        elif _SHELL_META.search(cmd):
+            r = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                               timeout=15, executable='/bin/bash')
+        else:
+            r = subprocess.run(shlex.split(cmd), shell=False,
+                               capture_output=True, text=True, timeout=15)
         if check and r.returncode != 0:
             raise RuntimeError(r.stderr.strip() or r.stdout.strip())
         return r.stdout.strip(), r.stderr.strip(), r.returncode
     except subprocess.TimeoutExpired:
         raise RuntimeError(f'Command timed out: {cmd}')
+
+
+def _wg_pubkey(privkey: str) -> str:
+    """Derive WireGuard public key from private key via stdin — no shell."""
+    r = subprocess.run(['wg', 'pubkey'], input=privkey.strip(),
+                       capture_output=True, text=True, timeout=5)
+    if r.returncode != 0:
+        raise RuntimeError('wg pubkey: ' + r.stderr.strip())
+    return r.stdout.strip()
 
 
 # ── Per-interface paths ───────────────────────────────────────────────────────
@@ -492,29 +483,13 @@ def _peer_rules_lines(iface, peer_ip, ipt_rules):
                 lines.append(f'iptables -A $CHAIN_NAME -s {peer_ip} -i $WIREGUARD_INTERFACE -p {p}{dp} -j {action}')
 
         elif rtype == 'ratelimit':
-            # Rate limiting via hashlimit inside the WIREGUARD chain.
-            # Must be BEFORE the catch-all ACCEPT/DROP rules in the chain.
-            # Download = server→peer (out=wg, dst=peer_ip)
-            # Upload   = peer→server (in=wg,  src=peer_ip)
             tag = peer_ip.replace('.', '_')
             if r.get('kbps_dl'):
-                kBps = int(r['kbps_dl'])
-                lines.append(
-                    f'iptables -A $CHAIN_NAME -o $WIREGUARD_INTERFACE -d {peer_ip}'
-                    f' -m hashlimit --hashlimit-above {kBps}kb/s'
-                    f' --hashlimit-burst {kBps * 2}kb'
-                    f' --hashlimit-mode dstip --hashlimit-name rl_dl_{tag}'
-                    f' -j DROP'
-                )
+                kbps = int(r['kbps_dl'])
+                lines.append(f'iptables -I FORWARD -o $WIREGUARD_INTERFACE -d {peer_ip} -m hashlimit --hashlimit-above {kbps}kb/s --hashlimit-burst {kbps*2} --hashlimit-mode dstip --hashlimit-name rl_dl_{tag} -j DROP')
             if r.get('kbps_ul'):
-                kBps = int(r['kbps_ul'])
-                lines.append(
-                    f'iptables -A $CHAIN_NAME -i $WIREGUARD_INTERFACE -s {peer_ip}'
-                    f' -m hashlimit --hashlimit-above {kBps}kb/s'
-                    f' --hashlimit-burst {kBps * 2}kb'
-                    f' --hashlimit-mode srcip --hashlimit-name rl_ul_{tag}'
-                    f' -j DROP'
-                )
+                kbps = int(r['kbps_ul'])
+                lines.append(f'iptables -I FORWARD -i $WIREGUARD_INTERFACE -s {peer_ip} -m hashlimit --hashlimit-above {kbps}kb/s --hashlimit-burst {kbps*2} --hashlimit-mode srcip --hashlimit-name rl_ul_{tag} -j DROP')
 
     return lines
 
@@ -562,54 +537,18 @@ def generate_postup_script(iface, peers, meta):
         'iptables -N $CHAIN_NAME',
         'iptables -A FORWARD -j $CHAIN_NAME',
         '',
-        '# Per-peer rules (rate limits must come before conntrack ACCEPT)',
-    ]
-
-    # Pass 1: ratelimit rules first (must precede ACCEPT and conntrack)
-    for peer in peers:
-        pk        = peer.get('PublicKey', '')
-        pm        = meta.get(pk, {})
-        peer_ip   = _peer_ip(peer)
-        peer_name = pm.get('name') or peer.get('_name') or pk[:12]
-        for r in pm.get('ipt_rules', []):
-            if r.get('type') == 'ratelimit':
-                tag = peer_ip.replace('.', '_')
-                if r.get('kbps_dl'):
-                    kBps = int(r['kbps_dl'])
-                    lines.append(f'# ratelimit dl {peer_name}')
-                    lines.append(
-                        f'iptables -A $CHAIN_NAME -o $WIREGUARD_INTERFACE -d {peer_ip}'
-                        f' -m hashlimit --hashlimit-above {kBps}kb/s'
-                        f' --hashlimit-burst {kBps * 2}kb'
-                        f' --hashlimit-mode dstip --hashlimit-name rl_dl_{tag}'
-                        f' -j DROP'
-                    )
-                if r.get('kbps_ul'):
-                    kBps = int(r['kbps_ul'])
-                    lines.append(f'# ratelimit ul {peer_name}')
-                    lines.append(
-                        f'iptables -A $CHAIN_NAME -i $WIREGUARD_INTERFACE -s {peer_ip}'
-                        f' -m hashlimit --hashlimit-above {kBps}kb/s'
-                        f' --hashlimit-burst {kBps * 2}kb'
-                        f' --hashlimit-mode srcip --hashlimit-name rl_ul_{tag}'
-                        f' -j DROP'
-                    )
-                lines.append('')
-
-    lines += [
         '# Accept return traffic to WG clients',
         'iptables -A $CHAIN_NAME -o $WIREGUARD_INTERFACE -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT',
         '',
+        '# Per-peer rules',
     ]
 
-    # Pass 2: all other per-peer rules (internet, destination, port, nomasq)
-    lines.append('# Per-peer access rules')
     for peer in peers:
         pk        = peer.get('PublicKey', '')
         pm        = meta.get(pk, {})
         peer_ip   = _peer_ip(peer)
         peer_name = pm.get('name') or peer.get('_name') or pk[:12]
-        ipt_rules = [r for r in pm.get('ipt_rules', []) if r.get('type') != 'ratelimit']
+        ipt_rules = pm.get('ipt_rules', [])
         rule_lines = _peer_rules_lines(iface, peer_ip, ipt_rules)
         if rule_lines:
             lines.append(f'# {peer_name}')
@@ -660,32 +599,6 @@ def generate_postdown_script(iface):
         lines.append('# Remove nomasq exceptions')
         lines.extend(nomasq_lines)
         lines.append('')
-    # Collect tc + mangle cleanup for ratelimit rules
-    has_dl_rl = has_ul_rl = False
-    mangle_del = []
-    for peer in peers:
-        pk = peer.get('PublicKey', '')
-        pm = meta.get(pk, {})
-        peer_ip = _peer_ip(peer)
-        for r in pm.get('ipt_rules', []):
-            if r.get('type') == 'ratelimit':
-                mark_ul = abs(hash(f'ul_{peer_ip}')) % 0x7FFF + 1
-                if r.get('kbps_dl'): has_dl_rl = True
-                if r.get('kbps_ul'):
-                    has_ul_rl = True
-                    mangle_del.append(f'iptables -t mangle -D FORWARD -i $WIREGUARD_INTERFACE -s {peer_ip} -j MARK --set-mark {mark_ul} 2>/dev/null || true')
-
-    tc_lines = []
-    if has_dl_rl:
-        tc_lines.append('tc qdisc del dev $WIREGUARD_INTERFACE root 2>/dev/null || true')
-    if has_ul_rl:
-        tc_lines.append('tc qdisc del dev $MASQUERADE_INTERFACE root 2>/dev/null || true')
-    if tc_lines or mangle_del:
-        lines.append('# Remove tc rate limiting qdiscs and mangle marks')
-        lines.extend(tc_lines)
-        lines.extend(mangle_del)
-        lines.append('')
-
     lines += [
         '# Remove MASQUERADE',
         'iptables -t nat -D POSTROUTING -o $MASQUERADE_INTERFACE -j MASQUERADE -s $WIREGUARD_LAN 2>/dev/null || true',
@@ -712,8 +625,8 @@ def apply_firewall_scripts(iface):
     _, _, rc = run_cmd(f'ip link show {iface}', check=False)
     if rc != 0:
         return
-    run_cmd(f'bash {postdown_path(iface)}', check=False)
-    run_cmd(f'bash {postup_path(iface)}', check=False)
+    run_cmd(['/bin/bash', postdown_path(iface)], check=False)
+    run_cmd(['/bin/bash', postup_path(iface)], check=False)
 
 
 # ── WG helpers ────────────────────────────────────────────────────────────────
@@ -737,14 +650,8 @@ def parse_wg_show(iface):
 
 def generate_keypair():
     priv, _, _ = run_cmd('wg genkey')
-    # Pipe private key via stdin to avoid shell injection
-    try:
-        r = subprocess.run(['wg', 'pubkey'], input=priv.strip(),
-                           capture_output=True, text=True, timeout=10)
-        pub = r.stdout.strip()
-    except Exception as e:
-        raise RuntimeError(f'wg pubkey failed: {e}')
-    return priv.strip(), pub.strip()
+    pub = _wg_pubkey(priv)
+    return priv.strip(), pub
 
 def generate_preshared_key():
     psk, _, _ = run_cmd('wg genpsk'); return psk.strip()
@@ -958,82 +865,6 @@ def api_change_password():
 # API — Config + System
 # ════════════════════════════════════════════════════════════════════════════
 
-# ── IPv4 forwarding check ────────────────────────────────────────────────────
-
-def check_ip_forwarding():
-    """Return True if IPv4 forwarding is currently active on the host."""
-    try:
-        with open('/proc/sys/net/ipv4/ip_forward') as f:
-            return f.read().strip() == '1'
-    except Exception:
-        return None  # can't determine (non-Linux / permission issue)
-
-def enable_ip_forwarding():
-    """Attempt to enable IPv4 forwarding at runtime. Returns (success, message)."""
-    try:
-        with open('/proc/sys/net/ipv4/ip_forward', 'w') as f:
-            f.write('1')
-        # Also persist across reboots if sysctl.conf doesn't have it yet
-        try:
-            sysctl_conf = '/etc/sysctl.conf'
-            with open(sysctl_conf) as f:
-                existing = f.read()
-            if 'net.ipv4.ip_forward=1' not in existing:
-                with open(sysctl_conf, 'a') as f:
-                    f.write('\nnet.ipv4.ip_forward=1\n')
-        except Exception:
-            pass  # not critical — runtime enable already done
-        return True, 'IPv4 forwarding enabled.'
-    except PermissionError:
-        return False, 'Permission denied — run as root or use install.sh.'
-    except Exception as e:
-        return False, str(e)
-
-
-def get_wan_speed_mbps():
-    """Read WAN interface speed in Mbps.
-    Priority: env override → /sys → ethtool → saved user setting."""
-    # 1. Env override
-    override = os.environ.get('WAN_SPEED_MBPS', '').strip()
-    if override:
-        try: return int(override)
-        except Exception: pass
-
-    # 2. /sys/class/net/<iface>/speed
-    try:
-        with open(f'/sys/class/net/{WAN_INTERFACE}/speed') as f:
-            spd = int(f.read().strip())
-            if spd > 0:
-                return spd
-    except Exception:
-        pass
-
-    # 3. ethtool
-    try:
-        out, _, _ = run_cmd(f'ethtool {WAN_INTERFACE} 2>/dev/null | grep -i speed', check=False)
-        for line in out.splitlines():
-            if 'speed' in line.lower():
-                import re as _re
-                m = _re.search(r"(\d+)\s*[Mm]b", line)
-                if m:
-                    return int(m.group(1))
-    except Exception:
-        pass
-
-    # 4. User-saved value
-    try:
-        wan_meta_path = os.path.join(META_DIR, 'wg-manager-wan.json')
-        if os.path.exists(wan_meta_path):
-            d = json.load(open(wan_meta_path))
-            spd = d.get('speed_mbps')
-            if spd and int(spd) > 0:
-                return int(spd)
-    except Exception:
-        pass
-
-    return None
-
-
 @app.route('/api/config')
 @require_auth
 def api_config():
@@ -1041,405 +872,22 @@ def api_config():
         'wan_interface':    WAN_INTERFACE,
         'wg_dir':           WG_DIR,
         'server_public_ip': detect_public_ip(),
-        'ip_forwarding':    check_ip_forwarding(),
-        'wan_speed_mbps':   get_wan_speed_mbps(),
-        'version':          APP_VERSION,
     })
-
-@app.route('/api/system/update', methods=['POST'])
-@require_role('admin')
-def api_update():
-    """Pull latest app.py and index.html from GitHub and restart the service."""
-    import threading, urllib.request as _ur
-    REPO   = 'blackbox2097/wg-manager'
-    BRANCH = 'main'
-    RAW    = f'https://raw.githubusercontent.com/{REPO}/{BRANCH}'
-
-    errors = []
-    try:
-        for url, dest in [
-            (f'{RAW}/app.py',              '/opt/wg-manager/app.py'),
-            (f'{RAW}/templates/index.html', '/opt/wg-manager/templates/index.html'),
-        ]:
-            req = _ur.Request(url, headers={'User-Agent': 'wg-manager/' + APP_VERSION})
-            with _ur.urlopen(req, timeout=15) as r:
-                data = r.read()
-            with open(dest, 'wb') as f:
-                f.write(data)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-    def do_restart():
-        import time; time.sleep(1)
-        run_cmd('systemctl restart wg-manager', check=False)
-    threading.Thread(target=do_restart, daemon=True).start()
-    return jsonify({'success': True})
-
-
-@app.route('/api/version')
-@require_auth
-def api_version():
-    """Return current version and check GitHub for latest release."""
-    import urllib.request, json as _json
-    REPO = 'blackbox2097/wg-manager'
-
-    result = {
-        'current':    APP_VERSION,
-        'latest':     None,
-        'up_to_date': None,
-        'changelog':  None,
-        'error':      None,
-    }
-
-    try:
-        req = urllib.request.Request(
-            f'https://api.github.com/repos/{REPO}/releases/latest',
-            headers={'User-Agent': 'wg-manager/' + APP_VERSION, 'Accept': 'application/vnd.github+json'}
-        )
-        with urllib.request.urlopen(req, timeout=6) as r:
-            data = _json.loads(r.read())
-
-        result['latest']     = data.get('tag_name', '').lstrip('v')
-        result['changelog']  = data.get('body', '').strip() or data.get('name', '')
-        result['up_to_date'] = (result['latest'] == APP_VERSION)
-    except Exception as e:
-        result['error'] = str(e)
-
-    return jsonify(result)
-
-
-@app.route('/api/system/restart', methods=['POST'])
-@require_role('admin')
-def api_restart():
-    """Reboot the server."""
-    import threading
-    def do_reboot():
-        import time; time.sleep(1)
-        run_cmd('reboot', check=False)
-    threading.Thread(target=do_reboot, daemon=True).start()
-    return jsonify({'success': True, 'message': 'Rebooting...'})
-
-
-@app.route('/api/system/wan-speed', methods=['POST'])
-@require_role('admin')
-def api_set_wan_speed():
-    """Manually set WAN link speed (stored in meta file)."""
-    data  = request.json or {}
-    speed = data.get('speed_mbps')
-    try:
-        speed = int(speed)
-        if speed <= 0: raise ValueError()
-    except (TypeError, ValueError):
-        return jsonify({'error': 'Invalid speed value'}), 400
-
-    wan_meta_path = os.path.join(META_DIR, 'wg-manager-wan.json')
-    try:
-        with open(wan_meta_path, 'w') as f:
-            json.dump({'speed_mbps': speed}, f)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-    return jsonify({'success': True, 'speed_mbps': speed})
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# API — Geo lookup
-# ════════════════════════════════════════════════════════════════════════════
-
-@app.route('/api/<iface>/geo')
-@require_auth
-@validate_iface
-def api_iface_geo(iface):
-    """Return geo data for all peer endpoints on this interface."""
-    import urllib.request, json as _json
-
-    _, peers = parse_wg_conf(iface)
-    live     = parse_wg_show(iface)
-    meta     = load_meta(iface)
-
-    # Collect unique endpoint IPs
-    ip_to_peers = {}
-    for peer in peers:
-        pk       = peer.get('PublicKey', '')
-        ld       = live.get(pk, {})
-        endpoint = ld.get('endpoint') or ''
-        if not endpoint:
-            continue
-        ip = endpoint.rsplit(':', 1)[0].strip('[]')  # strip port and IPv6 brackets
-        pm = meta.get(pk, {})
-        ip_to_peers.setdefault(ip, []).append({
-            'public_key':       pk,
-            'name':             pm.get('name') or peer.get('_name', ''),
-            'allowed_ips':      peer.get('AllowedIPs', ''),
-            'endpoint':         endpoint,
-            'online':           ld.get('online', False),
-            'latest_handshake': ld.get('latest_handshake', 0),
-            'rx_bytes':         ld.get('rx_bytes', 0),
-            'tx_bytes':         ld.get('tx_bytes', 0),
-        })
-
-    if not ip_to_peers:
-        return jsonify({'peers': []})
-
-    ips = list(ip_to_peers.keys())
-
-    # Batch lookup via ip-api.com (server-side, no CORS issues)
-    geo_map  = {}
-    try:
-        # Try each IP individually via ip-api.com (HTTP only on free tier)
-        # Fall back to ipinfo.io if ip-api fails
-        for ip in ips:
-            try:
-                url = 'http://ip-api.com/json/' + ip + '?fields=status,message,country,countryCode,city,isp,org,query'
-                req = urllib.request.Request(url, headers={'User-Agent': 'wg-manager/1.0'})
-                with urllib.request.urlopen(req, timeout=6) as r:
-                    data = _json.loads(r.read())
-                geo_map[ip] = data
-            except Exception:
-                # Fallback: ipinfo.io (HTTPS, free, no key needed for basic info)
-                try:
-                    url2 = 'https://ipinfo.io/' + ip + '/json'
-                    req2 = urllib.request.Request(url2, headers={'User-Agent': 'wg-manager/1.0'})
-                    with urllib.request.urlopen(req2, timeout=6) as r2:
-                        d2 = _json.loads(r2.read())
-                    # Normalize to ip-api format
-                    city, region = (d2.get('city','') , d2.get('region',''))
-                    geo_map[ip] = {
-                        'query':       ip,
-                        'status':      'success',
-                        'country':     d2.get('country', ''),
-                        'countryCode': d2.get('country', ''),
-                        'city':        city,
-                        'isp':         d2.get('org', ''),
-                        'org':         d2.get('org', ''),
-                    }
-                except Exception as e2:
-                    geo_map[ip] = {'query': ip, 'status': 'fail', 'message': str(e2)}
-    except Exception as e:
-        app.logger.warning(f'Geo lookup failed: {e}')
-
-    # Build response
-    result = []
-    for ip, peer_list in ip_to_peers.items():
-        geo = geo_map.get(ip, {})
-        for p in peer_list:
-            result.append({**p, 'geo': geo})
-
-    return jsonify({'peers': result})
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# API — Interface Log
-# ════════════════════════════════════════════════════════════════════════════
-
-@app.route('/api/<iface>/log')
-@require_auth
-@validate_iface
-def api_iface_log(iface):
-    import time as _time
-    n      = min(int(request.args.get('lines', 100)), 1000)
-    source = request.args.get('source', 'all').strip()
-    parts  = []
-
-    if source in ('all', 'wg-quick'):
-        out, _, _ = run_cmd(
-            'journalctl -u wg-quick@' + iface + ' -n ' + str(n) +
-            ' --no-pager --output=short-iso 2>/dev/null',
-            check=False
-        )
-        if out.strip():
-            parts.append('-- Interface events (wg-quick@' + iface + ') --' + chr(10) + out.strip())
-
-    if source in ('all', 'kernel'):
-        out, _, _ = run_cmd(
-            'journalctl -k --no-pager --output=short-iso 2>/dev/null'
-            ' | grep -iE "wireguard|' + iface + '" | tail -' + str(n),
-            check=False
-        )
-        if out.strip():
-            parts.append('-- WireGuard kernel --' + chr(10) + out.strip())
-
-    if source in ('all', 'peers'):
-        wg_out, _, _ = run_cmd('wg show ' + iface + ' dump', check=False)
-        peer_lines = []
-        meta = load_meta(iface)
-        now  = int(_time.time())
-
-        for line in wg_out.strip().splitlines()[1:]:
-            cols = line.split(chr(9))
-            if len(cols) < 8:
-                continue
-            pubkey   = cols[0]
-            endpoint = cols[2] if cols[2] != '(none)' else 'no endpoint'
-            lhs      = int(cols[4]) if cols[4] != '0' else 0
-            rx, tx   = int(cols[5]), int(cols[6])
-            pm       = meta.get(pubkey, {})
-            name     = pm.get('name') or (pubkey[:20] + '...')
-
-            if lhs:
-                delta = now - lhs
-                if delta < 60:      age = str(delta) + 's ago'
-                elif delta < 3600:  age = str(delta // 60) + 'm ago'
-                elif delta < 86400: age = str(delta // 3600) + 'h ago'
-                else:               age = str(delta // 86400) + 'd ago'
-                status = 'ONLINE' if delta < 180 else 'OFFLINE'
-            else:
-                age, status = 'never', 'NEVER CONNECTED'
-
-            peer_lines.append(
-                '[' + status + '] ' + name + chr(10) +
-                '  endpoint:  ' + endpoint + chr(10) +
-                '  handshake: ' + age + chr(10) +
-                '  transfer:  rx=' + fmt_bytes(rx) + '  tx=' + fmt_bytes(tx)
-            )
-
-        kern_out, _, _ = run_cmd(
-            'journalctl -k --no-pager --output=short-iso 2>/dev/null'
-            ' | grep -i "handshake" | grep -i "' + iface + '" | tail -' + str(n),
-            check=False
-        )
-        if peer_lines:
-            parts.append('-- Peer status --' + chr(10) + (chr(10) + chr(10)).join(peer_lines))
-        if kern_out.strip():
-            parts.append('-- Kernel handshake events --' + chr(10) + kern_out.strip())
-
-    output = (chr(10) + chr(10)).join(parts) if parts else ('No log entries found for ' + iface + '.')
-    return jsonify({'output': output})
-
-
-ROUTES_META_PATH    = os.path.join(META_DIR, 'wg-manager-routes.json')
-ROUTES_SERVICE_PATH = '/etc/systemd/system/wg-manager-routes.service'
-
-def load_managed_routes():
-    try:
-        if os.path.exists(ROUTES_META_PATH):
-            return json.load(open(ROUTES_META_PATH))
-    except Exception:
-        pass
-    return []
-
-def save_managed_routes(routes):
-    with open(ROUTES_META_PATH, 'w') as f:
-        json.dump(routes, f, indent=2)
-    _sync_routes_service(routes)
-
-def _validate_route_field(val, name):
-    """Only allow alphanumeric, dots, colons, slashes and hyphens in route fields."""
-    if val and not re.match(r'^[a-zA-Z0-9.:/\\-]+$', val):
-        raise ValueError(f'Invalid characters in route field {name}: {val!r}')
-
-def _route_cmd(r, action='add'):
-    dst = r["dst"]; via = r.get("via",""); dev = r.get("dev",""); metric = r.get("metric","")
-    for val, name in [(dst,"dst"),(via,"via"),(dev,"dev"),(metric,"metric")]:
-        if val: _validate_route_field(val, name)
-    cmd = f'ip route {action} {dst}'
-    if via:    cmd += f' via {via}'
-    if dev:    cmd += f' dev {dev}'
-    if metric: cmd += f' metric {metric}'
-    return cmd
-
-def _sync_routes_service(routes):
-    persistent = [r for r in routes if r.get('persist')]
-    if not persistent:
-        if os.path.exists(ROUTES_SERVICE_PATH):
-            run_cmd('systemctl disable wg-manager-routes 2>/dev/null; rm -f ' + ROUTES_SERVICE_PATH, check=False)
-            run_cmd('systemctl daemon-reload', check=False)
-        return
-
-    def _exec_line(r):
-        cmd = 'ExecStart=/sbin/ip route replace ' + r['dst']
-        if r.get('via'):    cmd += ' via '    + r['via']
-        if r.get('dev'):    cmd += ' dev '    + r['dev']
-        if r.get('metric'): cmd += ' metric ' + r['metric']
-        return cmd
-
-    exec_lines = chr(10).join(_exec_line(r) for r in persistent)
-    svc_lines = [
-        '[Unit]',
-        'Description=WireGuard Manager Persistent Static Routes',
-        'After=network.target',
-        'Wants=network.target',
-        '',
-        '[Service]',
-        'Type=oneshot',
-        'RemainAfterExit=yes',
-    ]
-    service = chr(10).join(svc_lines) + chr(10) + exec_lines + chr(10) + chr(10) + '[Install]' + chr(10) + 'WantedBy=multi-user.target' + chr(10)
-
-# ════════════════════════════════════════════════════════════════════════════
-# API — Static Routes
-# ════════════════════════════════════════════════════════════════════════════
-
-@app.route('/api/routes')
-@require_role('admin', 'operator')
-def api_list_routes():
-    return jsonify({'routes': load_managed_routes()})
-
-@app.route('/api/routes/system')
-@require_role('admin', 'operator')
-def api_system_routes():
-    out, _, _ = run_cmd('ip route show', check=False)
-    return jsonify({'output': out})
-
-@app.route('/api/routes', methods=['POST'])
-@require_role('admin', 'operator')
-def api_add_route():
-    data    = request.json or {}
-    dst     = data.get('dst', '').strip()
-    via     = data.get('via', '').strip()
-    dev     = data.get('dev', '').strip()
-    metric  = data.get('metric', '').strip()
-    persist = bool(data.get('persist', False))
-
-    if not dst:
-        return jsonify({'error': 'Destination is required'}), 400
-    if not via and not dev:
-        return jsonify({'error': 'Gateway or interface is required'}), 400
-
-    try:
-        ipaddress.ip_network(dst, strict=False)
-    except ValueError:
-        return jsonify({'error': f'Invalid destination: {dst}'}), 400
-
-    r = {'dst': dst, 'via': via, 'dev': dev, 'metric': metric, 'persist': persist}
-    _, stderr, rc = run_cmd(_route_cmd(r, 'add'), check=False)
-    if rc != 0:
-        _, stderr, rc = run_cmd(_route_cmd(r, 'replace'), check=False)
-    if rc != 0:
-        return jsonify({'error': stderr or 'Failed to add route'}), 500
-
-    routes = load_managed_routes()
-    routes.append(r)
-    save_managed_routes(routes)
-    return jsonify({'success': True})
-
-@app.route('/api/routes/<int:idx>', methods=['DELETE'])
-@require_role('admin', 'operator')
-def api_delete_route(idx):
-    routes = load_managed_routes()
-    if idx < 0 or idx >= len(routes):
-        return jsonify({'error': 'Route not found'}), 404
-    r = routes[idx]
-    run_cmd(_route_cmd(r, 'del'), check=False)
-    routes.pop(idx)
-    save_managed_routes(routes)
-    return jsonify({'success': True})
-
-@app.route('/api/routes/<int:idx>/persist', methods=['PUT'])
-@require_role('admin', 'operator')
-def api_toggle_route_persist(idx):
-    routes = load_managed_routes()
-    if idx < 0 or idx >= len(routes):
-        return jsonify({'error': 'Route not found'}), 404
-    routes[idx]['persist'] = not routes[idx].get('persist', False)
-    save_managed_routes(routes)
-    return jsonify({'success': True, 'persist': routes[idx]['persist']})
-
 
 @app.route('/api/<iface>/throughput')
 @require_auth
-@validate_iface_or_wan
 def api_throughput(iface):
+    def read_iface_bytes(name):
+        try:
+            with open('/proc/net/dev') as f:
+                for line in f:
+                    if line.strip().startswith(name + ':'):
+                        parts = line.split(':')[1].split()
+                        return int(parts[0]), int(parts[8])  # rx_bytes, tx_bytes
+        except Exception:
+            pass
+        return None, None
+
     import time
     rx1, tx1 = read_iface_bytes(iface)
     if rx1 is None:
@@ -1450,12 +898,18 @@ def api_throughput(iface):
     rx_bps = max(0, rx2 - rx1)
     tx_bps = max(0, tx2 - tx1)
 
+    def fmt(bps):
+        if bps < 1024:           return f'{bps} B/s'
+        if bps < 1024*1024:      return f'{bps/1024:.1f} KB/s'
+        if bps < 1024*1024*1024: return f'{bps/1024/1024:.2f} MB/s'
+        return f'{bps/1024/1024/1024:.2f} GB/s'
+
     return jsonify({
         'iface':   iface,
         'rx_bps':  rx_bps,
         'tx_bps':  tx_bps,
-        'rx_human': fmt_bytes(rx_bps),
-        'tx_human': fmt_bytes(tx_bps),
+        'rx_human': fmt(rx_bps),
+        'tx_human': fmt(tx_bps),
     })
 
 
@@ -1560,27 +1014,18 @@ def api_create_interface():
 
 @app.route('/api/interfaces/<iface>/up', methods=['POST'])
 @require_role('admin', 'operator')
-@validate_iface
 def api_interface_up(iface):
-    try:
-        run_cmd(f'wg-quick up {iface}')
-        run_cmd(f'systemctl enable wg-quick@{iface}', check=False)
-        return jsonify({'success': True})
+    try: run_cmd(f'wg-quick up {iface}'); return jsonify({'success': True})
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/api/interfaces/<iface>/down', methods=['POST'])
 @require_role('admin')
-@validate_iface
 def api_interface_down(iface):
-    try:
-        run_cmd(f'wg-quick down {iface}')
-        run_cmd(f'systemctl disable wg-quick@{iface}', check=False)
-        return jsonify({'success': True})
+    try: run_cmd(f'wg-quick down {iface}'); return jsonify({'success': True})
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/api/interfaces/<iface>/restart', methods=['POST'])
 @require_role('admin')
-@validate_iface
 def api_interface_restart(iface):
     run_cmd(f'wg-quick down {iface}', check=False)
     try: run_cmd(f'wg-quick up {iface}'); return jsonify({'success': True})
@@ -1588,25 +1033,20 @@ def api_interface_restart(iface):
 
 @app.route('/api/interfaces/<iface>/toggle', methods=['POST'])
 @require_role('admin')
-@validate_iface
 def api_interface_toggle(iface):
     _, _, rc = run_cmd(f'ip link show {iface}', check=False)
     if rc == 0:
         run_cmd(f'wg-quick down {iface}', check=False)
-        run_cmd(f'systemctl disable wg-quick@{iface}', check=False)
         return jsonify({'success': True, 'up': False, 'message': f'{iface} down.'})
     run_cmd(f'wg-quick up {iface}', check=False)
-    run_cmd(f'systemctl enable wg-quick@{iface}', check=False)
     return jsonify({'success': True, 'up': True, 'message': f'{iface} up.'})
 
 @app.route('/api/interfaces/<iface>/delete', methods=['POST'])
 @require_role('admin')
-@validate_iface
 def api_delete_interface(iface):
     if not re.match(r'^wg\d+$', iface):
         return jsonify({'error': 'Invalid interface name'}), 400
     run_cmd(f'wg-quick down {iface}', check=False)
-    run_cmd(f'systemctl disable wg-quick@{iface}', check=False)
     for p in [conf_path(iface), meta_path(iface)]:
         if os.path.exists(p): os.remove(p)
     return jsonify({'success': True})
@@ -1618,7 +1058,6 @@ def api_delete_interface(iface):
 
 @app.route('/api/<iface>/status')
 @require_auth
-@validate_iface
 def api_status(iface):
     cfg, peers = parse_wg_conf(iface); live = parse_wg_show(iface)
     _, _, iface_rc = run_cmd(f'ip link show {iface}', check=False)
@@ -1627,14 +1066,11 @@ def api_status(iface):
     server_pub = ''
     if cfg.get('PrivateKey'):
         try:
-            _r = subprocess.run(['wg', 'pubkey'], input=cfg['PrivateKey'].strip(),
-                                capture_output=True, text=True, timeout=5)
-            derived = _r.stdout.strip()
+            derived = _wg_pubkey(cfg['PrivateKey'])
+            if derived:
+                server_pub = derived
         except Exception:
-            derived = ''
-        _rc = 0
-        if _rc == 0 and derived.strip():
-            server_pub = derived.strip()
+            pass
     if not server_pub:
         live_pub, _, _ = run_cmd(f'wg show {iface} public-key', check=False)
         if live_pub.strip():
@@ -1650,13 +1086,11 @@ def api_status(iface):
 
 @app.route('/api/<iface>/interface')
 @require_auth
-@validate_iface
 def api_get_interface(iface):
     cfg, _ = parse_wg_conf(iface); return jsonify(cfg)
 
 @app.route('/api/<iface>/interface', methods=['PUT'])
 @require_role('admin')
-@validate_iface
 def api_update_interface(iface):
     data = request.json; cfg, peers = parse_wg_conf(iface)
     # NOTE: DNS excluded — must not be set in server [Interface] (breaks server DNS via systemd-resolved)
@@ -1689,7 +1123,6 @@ def api_generate_keys():
 
 @app.route('/api/<iface>/peers', methods=['POST'])
 @require_role('admin', 'operator')
-@validate_iface
 def api_add_peer(iface):
     data = request.json; cfg, peers = parse_wg_conf(iface)
     name = data.get('name','').strip(); priv = data.get('private_key','').strip()
@@ -1699,12 +1132,7 @@ def api_add_peer(iface):
     if not pub:
         if not priv: priv, pub = generate_keypair()
         else:
-            try:
-                _r = subprocess.run(['wg', 'pubkey'], input=priv.strip(),
-                                    capture_output=True, text=True, timeout=5)
-                p = _r.stdout; pub = p.strip()
-            except Exception:
-                pub = ''
+            pub = _wg_pubkey(priv)
     if not ips: ips = next_available_ip(cfg, peers) or '10.0.0.2/32'
     if any(p.get('PublicKey') == pub for p in peers):
         return jsonify({'error': 'Duplicate public key.'}), 400
@@ -1718,13 +1146,11 @@ def api_add_peer(iface):
     server_pub = ''
     if cfg.get('PrivateKey'):
         try:
-            _r = subprocess.run(['wg', 'pubkey'], input=cfg['PrivateKey'].strip(),
-                                capture_output=True, text=True, timeout=5)
-            derived = _r.stdout.strip(); rc = 0
+            derived = _wg_pubkey(cfg['PrivateKey'])
+            if derived:
+                server_pub = derived
         except Exception:
-            derived = ''; rc = 1
-        if rc == 0 and derived.strip():
-            server_pub = derived.strip()
+            pass
     if not server_pub:
         # Fallback: try wg show if interface is up
         live_pub, _, _ = run_cmd(f'wg show {iface} public-key', check=False)
@@ -1753,7 +1179,6 @@ def api_add_peer(iface):
 
 @app.route('/api/<iface>/peers/<path:pubkey>', methods=['PUT'])
 @require_role('admin', 'operator')
-@validate_iface
 def api_update_peer(iface, pubkey):
     data = request.json; cfg, peers = parse_wg_conf(iface); found = False
     for peer in peers:
@@ -1778,7 +1203,6 @@ def api_update_peer(iface, pubkey):
 
 @app.route('/api/<iface>/peers/<path:pubkey>', methods=['DELETE'])
 @require_role('admin', 'operator')
-@validate_iface
 def api_delete_peer(iface, pubkey):
     cfg, peers = parse_wg_conf(iface); orig = len(peers)
     peers = [p for p in peers if p.get('PublicKey') != pubkey]
@@ -1792,7 +1216,6 @@ def api_delete_peer(iface, pubkey):
 
 @app.route('/api/<iface>/peers/<path:pubkey>/toggle', methods=['POST'])
 @require_role('admin', 'operator')
-@validate_iface
 def api_toggle_peer(iface, pubkey):
     try:
         cfg, peers = parse_wg_conf(iface)
@@ -1812,7 +1235,6 @@ def api_toggle_peer(iface, pubkey):
 
 @app.route('/api/<iface>/peers/export')
 @require_role('admin')
-@validate_iface
 def api_export_peers(iface):
     cfg, peers = parse_wg_conf(iface)
     meta       = load_meta(iface)
@@ -1905,36 +1327,28 @@ def api_export_peers(iface):
 
 @app.route('/api/<iface>/traffic/live')
 @require_auth
-@validate_iface_or_wan
 def api_traffic_live(iface):
     import time
-    # Use the latest sample from the traffic_sampler DB (updated every 3s)
-    # This avoids blocking sleep() and gives consistent values with the chart
-    now = int(time.time())
-    with get_db() as db:
-        row = db.execute(
-            'SELECT rx_bps, tx_bps FROM traffic_samples '
-            'WHERE iface=? AND ts >= ? ORDER BY ts DESC LIMIT 1',
-            (iface, now - 30)  # sample must be within last 30s
-        ).fetchone()
+    rx1, tx1 = read_iface_bytes(iface)
+    if rx1 is None:
+        return jsonify({'rx_bps': 0, 'tx_bps': 0, 'rx_human': '0 B/s', 'tx_human': '0 B/s'})
+    time.sleep(1)
+    rx2, tx2 = read_iface_bytes(iface)
+    rx_bps = max(0, rx2 - rx1)
+    tx_bps = max(0, tx2 - tx1)
 
-    if row:
-        rx_bps = row['rx_bps']
-        tx_bps = row['tx_bps']
-    else:
-        rx_bps = tx_bps = 0
+    def fmt(b):
+        if b < 1024:             return f'{b} B/s'
+        if b < 1024**2:          return f'{b/1024:.1f} KB/s'
+        if b < 1024**3:          return f'{b/1024**2:.2f} MB/s'
+        return f'{b/1024**3:.2f} GB/s'
 
-    return jsonify({
-        'rx_bps':   rx_bps,
-        'tx_bps':   tx_bps,
-        'rx_human': fmt_bytes(rx_bps) + '/s',
-        'tx_human': fmt_bytes(tx_bps) + '/s',
-    })
+    return jsonify({'rx_bps': rx_bps, 'tx_bps': tx_bps,
+                    'rx_human': fmt(rx_bps), 'tx_human': fmt(tx_bps)})
 
 
 @app.route('/api/<iface>/traffic/history')
 @require_auth
-@validate_iface_or_wan
 def api_traffic_history(iface):
     import time
     minutes = min(int(request.args.get('minutes', 60)), 1440)
@@ -1950,7 +1364,6 @@ def api_traffic_history(iface):
 
 @app.route('/api/<iface>/traffic/stats')
 @require_auth
-@validate_iface_or_wan
 def api_traffic_stats(iface):
     import time
     now   = int(time.time())
@@ -1989,7 +1402,6 @@ def api_traffic_stats(iface):
 
 @app.route('/api/<iface>/peers/<path:pubkey>/privkey')
 @require_role('admin')
-@validate_iface
 def api_get_peer_privkey(iface, pubkey):
     privkey = get_peer_key(iface, pubkey)
     if privkey is None:
@@ -2000,13 +1412,11 @@ def api_get_peer_privkey(iface, pubkey):
     server_pub = ''
     if cfg.get('PrivateKey'):
         try:
-            _r = subprocess.run(['wg', 'pubkey'], input=cfg['PrivateKey'].strip(),
-                                capture_output=True, text=True, timeout=5)
-            derived = _r.stdout.strip(); rc = 0
+            derived = _wg_pubkey(cfg['PrivateKey'])
+            if derived:
+                server_pub = derived
         except Exception:
-            derived = ''; rc = 1
-        if rc == 0 and derived.strip():
-            server_pub = derived.strip()
+            pass
     if not server_pub:
         live_pub, _, _ = run_cmd(f'wg show {iface} public-key', check=False)
         if live_pub.strip():
@@ -2031,14 +1441,12 @@ def api_get_peer_privkey(iface, pubkey):
 
 @app.route('/api/<iface>/peers/<path:pubkey>/rules')
 @require_auth
-@validate_iface
 def api_get_rules(iface, pubkey):
     pm = load_meta(iface).get(pubkey, {})
     return jsonify({'ipt_rules': pm.get('ipt_rules',[]), 'post_up': pm.get('post_up',''), 'post_down': pm.get('post_down','')})
 
 @app.route('/api/<iface>/peers/<path:pubkey>/rules', methods=['PUT'])
 @require_role('admin', 'operator')
-@validate_iface
 def api_set_rules(iface, pubkey):
     data = request.json; _, peers = parse_wg_conf(iface)
     peer_ip_cidr = data.get('allowed_ips','')
@@ -2062,7 +1470,6 @@ def api_set_rules(iface, pubkey):
 
 @app.route('/api/<iface>/firewall-script')
 @require_auth
-@validate_iface
 def api_get_firewall_script(iface):
     try:
         with open(postup_path(iface)) as f:
@@ -2080,7 +1487,6 @@ def api_get_firewall_script(iface):
 
 @app.route('/api/<iface>/peers/<path:pubkey>/rules/preview', methods=['POST'])
 @require_role('admin', 'operator')  # readonly has no reason to call preview
-@validate_iface
 def api_preview_rules(iface, pubkey):
     data = request.json
     peer_ip   = data.get('allowed_ips', '10.0.0.2/32').split('/')[0]
@@ -2095,7 +1501,8 @@ def api_preview_rules(iface, pubkey):
 # API — Backup / Restore (admin only)
 # ════════════════════════════════════════════════════════════════════════════
 
-
+import zipfile, io, hashlib
+from flask import send_file
 
 BACKUP_VERSION = 1
 
@@ -2373,10 +1780,10 @@ def read_iface_bytes(iface):
 
 
 def traffic_sampler():
-    """Background thread: sample all wg interfaces every 3s, store in SQLite."""
+    """Background thread: sample all wg interfaces every 10s, store in SQLite."""
     import time
     prev = {}  # {iface: (rx, tx, ts)}
-    INTERVAL = 3
+    INTERVAL = 10
 
     while True:
         try:
@@ -2384,9 +1791,6 @@ def traffic_sampler():
                       if re.match(r'^wg\d+\.conf$', f)]
         except Exception:
             ifaces = []
-        # Also sample the WAN interface for dashboard graph
-        if WAN_INTERFACE and WAN_INTERFACE not in ifaces:
-            ifaces.append(WAN_INTERFACE)
 
         now = int(time.time())
 
@@ -2419,9 +1823,24 @@ def traffic_sampler():
         time.sleep(INTERVAL)
 
 
-if __name__ == '__main__':
-    init_db()
+
+# ── Startup ───────────────────────────────────────────────────────────────────
+
+def _start_background_services():
+    """Start background threads. Called once — guarded against double-start."""
     import threading
-    threading.Thread(target=traffic_sampler, daemon=True, name='traffic-sampler').start()
-    threading.Thread(target=_fetch_public_ip, daemon=True, name='ip-detect').start()
+    for t in threading.enumerate():
+        if t.name in ('traffic-sampler', 'ip-detect'):
+            return  # already running (e.g. gunicorn --reload)
+    init_db()
+    threading.Thread(target=traffic_sampler, daemon=True,
+                     name='traffic-sampler').start()
+    threading.Thread(target=_fetch_public_ip, daemon=True,
+                     name='ip-detect').start()
+
+
+# Works under both `python app.py` and gunicorn (which imports this module)
+_start_background_services()
+
+if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)

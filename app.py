@@ -1441,17 +1441,11 @@ def api_iface_geo(iface):
 
     def geo_lookup(ip):
         try:
-            url = f'http://ip-api.com/json/{ip}?fields=status,country,countryCode,city,lat,lon'
+            url = f'http://ip-api.com/json/{ip}?fields=status,country,countryCode,city,lat,lon,org,isp'
             with _urlreq.urlopen(url, timeout=3) as resp:
                 g = _json.loads(resp.read())
                 if g.get('status') == 'success':
-                    return {
-                        'country':      g.get('country', ''),
-                        'country_code': g.get('countryCode', '').lower(),
-                        'city':         g.get('city', ''),
-                        'lat':          g.get('lat', 0),
-                        'lon':          g.get('lon', 0),
-                    }
+                    return g
         except Exception:
             pass
         return {}

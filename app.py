@@ -1400,6 +1400,89 @@ def api_traffic_stats(iface):
     return jsonify({'h24': annotate(stats_24h), 'h1': annotate(stats_1h)})
 
 
+@app.route('/api/<iface>/log')
+@require_auth
+def api_iface_log(iface):
+    lines  = min(int(request.args.get('lines', 100)), 500)
+    source = request.args.get('source', 'all')
+
+    if source == 'wg-manager':
+        cmd = ['journalctl', '-u', 'wg-manager', '-n', str(lines),
+               '--no-pager', '--output=short-iso']
+    elif source == 'wg-quick':
+        cmd = ['journalctl', '-u', f'wg-quick@{iface}', '-n', str(lines),
+               '--no-pager', '--output=short-iso']
+    elif source == 'kernel':
+        cmd = ['journalctl', '-k', '-n', str(lines),
+               '--no-pager', '--output=short-iso', '--grep=wireguard']
+    else:  # all
+        cmd = ['journalctl', '-u', 'wg-manager', '-u', f'wg-quick@{iface}',
+               '-n', str(lines), '--no-pager', '--output=short-iso']
+
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        output = r.stdout.strip() or '(no entries)'
+    except Exception as e:
+        output = f'(error reading log: {e})'
+
+    return jsonify({'output': output})
+
+
+@app.route('/api/<iface>/geo')
+@require_auth
+def api_iface_geo(iface):
+    import urllib.request as _urlreq, json as _json, ipaddress
+
+    def is_private(ip):
+        try:
+            return ipaddress.ip_address(ip).is_private
+        except ValueError:
+            return True
+
+    def geo_lookup(ip):
+        try:
+            url = f'http://ip-api.com/json/{ip}?fields=status,country,countryCode,city,lat,lon'
+            with _urlreq.urlopen(url, timeout=3) as resp:
+                g = _json.loads(resp.read())
+                if g.get('status') == 'success':
+                    return {
+                        'country':      g.get('country', ''),
+                        'country_code': g.get('countryCode', '').lower(),
+                        'city':         g.get('city', ''),
+                        'lat':          g.get('lat', 0),
+                        'lon':          g.get('lon', 0),
+                    }
+        except Exception:
+            pass
+        return {}
+
+    live       = parse_wg_show(iface)
+    _, peers   = parse_wg_conf(iface)
+    meta       = load_meta(iface)
+    result     = []
+
+    for peer in peers:
+        pk     = peer.get('PublicKey', '')
+        live_d = live.get(pk, {})
+        endpoint = live_d.get('endpoint', '')
+        if not endpoint:
+            continue
+        # Extract IP from endpoint (handle IPv6 [::1]:port format too)
+        ep_host = endpoint.rsplit(':', 1)[0].strip('[]')
+        geo = {} if is_private(ep_host) else geo_lookup(ep_host)
+        pm  = meta.get(pk, {})
+        result.append({
+            'name':             peer.get('_name', '') or pm.get('name', ''),
+            'public_key':       pk,
+            'endpoint':         endpoint,
+            'online':           live_d.get('online', False) and peer.get('_enabled', True),
+            'latest_handshake': live_d.get('latest_handshake', 0),
+            'geo':              geo,
+        })
+
+    return jsonify({'peers': result})
+
+
 @app.route('/api/<iface>/peers/<path:pubkey>/privkey')
 @require_role('admin')
 def api_get_peer_privkey(iface, pubkey):

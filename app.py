@@ -190,17 +190,24 @@ def after_request(response):
     return refresh_token_if_needed(response)
 
 
+_WG_ONLY_SEGMENTS = (
+    '/up', '/down', '/restart', '/toggle', '/delete',
+    '/peers', '/interface', '/status', '/rules', '/firewall-script',
+)
+
+
 @app.before_request
 def _validate_url_params():
-    """Validate <iface> and <pubkey> URL parameters on every request.
-    Prevents path traversal and command injection via URL parameters.
-    """
+    """Validate <iface> and <pubkey> URL parameters on every request."""
     args = request.view_args or {}
 
     iface = args.get('iface')
     if iface is not None:
-        if not re.match(r'^wg\d+$', iface):
+        if not re.match(r'^[a-zA-Z][a-zA-Z0-9_.-]{0,14}$', iface):
             return jsonify({'error': 'Invalid interface name'}), 400
+        if any(seg in request.path for seg in _WG_ONLY_SEGMENTS):
+            if not re.match(r'^wg\d+$', iface):
+                return jsonify({'error': 'Invalid WireGuard interface name'}), 400
 
     pubkey = args.get('pubkey')
     if pubkey is not None:

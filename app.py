@@ -1156,13 +1156,15 @@ def api_add_peer(iface):
         live_pub, _, _ = run_cmd(f'wg show {iface} public-key', check=False)
         if live_pub.strip():
             server_pub = live_pub.strip()
+    im       = load_iface_meta(iface)
+    ext_port = im.get('external_port', '') or cfg.get('ListenPort', '51820')
     client_conf = None
     if priv:
         pub_ip = detect_public_ip() or '<SERVER_PUBLIC_IP>'
         client_conf = (f'[Interface]\nPrivateKey = {priv}\nAddress = {ips}\n'
                        + (f'DNS = {dns}\n' if dns else '')
                        + f'\n[Peer]\nPublicKey = {server_pub.strip()}\n'
-                       + f'Endpoint = {pub_ip}:{cfg.get("ListenPort","51820")}\n'
+                       + f'Endpoint = {pub_ip}:{ext_port}\n'
                        + f'AllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25\n'
                        + (f'PresharedKey = {psk}\n' if psk else ''))
     # Store encrypted private key so admin can retrieve config later
@@ -1173,9 +1175,9 @@ def api_add_peer(iface):
     return jsonify({'success': True, 'message': f'Peer {name or pub[:12]} added.',
                     'public_key': pub, 'private_key': priv, 'client_config': client_conf,
                     'server_pubkey': server_pub.strip(),
-                    'listen_port': cfg.get('ListenPort', '51820'),
+                    'listen_port': ext_port,
                     'allowed_ips': ips,
-                    'endpoint': f'{pub_ip}:{cfg.get("ListenPort","51820")}' if pub_ip else ''})
+                    'endpoint': f'{pub_ip}:{ext_port}' if pub_ip else ''})
 
 @app.route('/api/<iface>/peers/<path:pubkey>', methods=['PUT'])
 @require_role('admin', 'operator')

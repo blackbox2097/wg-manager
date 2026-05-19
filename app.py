@@ -109,6 +109,40 @@ def now_iso():
 
 # ── Auth helpers ─────────────────────────────────────────────────────────────
 
+# Brute-force protection: in-memory per-IP login attempt tracking
+_login_attempts: dict = {}   # {ip: {'count': int, 'locked_until': float}}
+_LOGIN_MAX_ATTEMPTS = 5
+_LOGIN_LOCKOUT_SEC  = 30
+_LOGIN_WINDOW_SEC   = 60
+
+def _check_login_allowed(ip: str) -> tuple[bool, int]:
+    """Returns (allowed, retry_after_seconds)."""
+    import time
+    now   = time.time()
+    entry = _login_attempts.get(ip)
+    if not entry:
+        return True, 0
+    if entry.get('locked_until', 0) > now:
+        return False, int(entry['locked_until'] - now)
+    if now - entry.get('first_attempt', 0) > _LOGIN_WINDOW_SEC:
+        del _login_attempts[ip]
+        return True, 0
+    return True, 0
+
+def _record_login_failure(ip: str):
+    import time
+    now   = time.time()
+    entry = _login_attempts.setdefault(ip, {'count': 0, 'first_attempt': now})
+    entry['count'] += 1
+    if entry['count'] >= _LOGIN_MAX_ATTEMPTS:
+        entry['locked_until'] = now + _LOGIN_LOCKOUT_SEC
+        entry['count']        = 0
+        entry['first_attempt'] = now
+
+def _record_login_success(ip: str):
+    _login_attempts.pop(ip, None)
+
+
 def require_role(*roles):
     """Decorator: require JWT + one of the given roles."""
     def decorator(fn):
@@ -154,6 +188,24 @@ def refresh_token_if_needed(response):
 @app.after_request
 def after_request(response):
     return refresh_token_if_needed(response)
+
+
+@app.before_request
+def _validate_url_params():
+    """Validate <iface> and <pubkey> URL parameters on every request.
+    Prevents path traversal and command injection via URL parameters.
+    """
+    args = request.view_args or {}
+
+    iface = args.get('iface')
+    if iface is not None:
+        if not re.match(r'^wg\d+$', iface):
+            return jsonify({'error': 'Invalid interface name'}), 400
+
+    pubkey = args.get('pubkey')
+    if pubkey is not None:
+        if not re.match(r'^[A-Za-z0-9+/]{43}=$', pubkey):
+            return jsonify({'error': 'Invalid public key format'}), 400
 
 
 # ── WAN detection ─────────────────────────────────────────────────────────────
@@ -718,6 +770,11 @@ def index():
 
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
+    ip = request.remote_addr or '0.0.0.0'
+    allowed, retry_after = _check_login_allowed(ip)
+    if not allowed:
+        return jsonify({'error': f'Too many failed attempts. Try again in {retry_after}s.'}), 429
+
     data     = request.json or {}
     username = data.get('username','').strip()
     password = data.get('password','').encode()
@@ -727,6 +784,7 @@ def api_login():
     with get_db() as db:
         row = db.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
     if not row or not bcrypt.checkpw(password, row['pw_hash'].encode()):
+        _record_login_failure(ip)
         return jsonify({'error': 'Invalid credentials'}), 401
 
     # Update last_login
@@ -744,6 +802,7 @@ def api_login():
         'role':     row['role'],
         'session_minutes': SESSION_MIN,
     }))
+    _record_login_success(ip)
     set_access_cookies(resp, token)
     return resp
 
@@ -1716,6 +1775,9 @@ def api_restore():
             # Bring down all WG interfaces before restoring
             active_ifaces = []
             for iname in manifest.get('interfaces', []):
+                if not re.match(r'^wg\d+$', iname):
+                    errors.append(f'Skipping invalid interface name in manifest: {iname}')
+                    continue
                 _, _, rc = run_cmd(f'ip link show {iname}', check=False)
                 if rc == 0:
                     active_ifaces.append(iname)

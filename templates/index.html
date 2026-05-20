@@ -1044,8 +1044,8 @@ select option{background:var(--bg3)}
         </div>
 
         <div class="form-group">
-          <label>DNS override <span class="hint">optional</span></label>
-          <input id="conf-dns-override" placeholder="leave empty to use peer DNS" oninput="rebuildConf()"/>
+          <label>DNS</label>
+          <input id="conf-dns-override" placeholder="e.g. 1.1.1.1" oninput="rebuildConf()"/>
         </div>
         </div><!-- /conf-routing-section -->
       </div>
@@ -2834,6 +2834,7 @@ async function openExistingPeerConf(pubkey, name, allowedIps) {
     const d = await apiFetch('/api/' + activeIface + '/peers/' + encodeURIComponent(pubkey) + '/privkey');
     openConfModal({
       private_key:   d.private_key,
+      public_key:    pubkey,
       allowed_ips:   d.allowed_ips || allowedIps.split(',')[0].trim(),
       dns:           d.dns || '',
       server_pubkey: d.server_pubkey || '',
@@ -2841,6 +2842,8 @@ async function openExistingPeerConf(pubkey, name, allowedIps) {
       preshared_key: d.preshared_key || '',
       name:          name,
       endpoint:      d.endpoint || (serverPublicIp ? serverPublicIp + ':' + (d.listen_port||'51820') : ''),
+      client_routes: d.client_routes || '',
+      client_dns:    d.client_dns || '',
     });
   } catch(e) {
     toast(e.message, 'error');
@@ -2852,8 +2855,8 @@ function openConfModal(peerData) {
   confBaseData = peerData;
   const routingSection = document.getElementById('conf-routing-section');
   if (routingSection) routingSection.style.display = '';
-  const cRoutes = document.getElementById('conf-routes'); if(cRoutes) cRoutes.value = '';
-  const cDns = document.getElementById('conf-dns-override'); if(cDns) cDns.value = '';
+  const cRoutes = document.getElementById('conf-routes'); if(cRoutes) cRoutes.value = confBaseData?.client_routes || '';
+  const cDns = document.getElementById('conf-dns-override'); if(cDns) cDns.value = confBaseData?.client_dns || confBaseData?.dns || '';
   rebuildConf();
   openModal('modal-conf');
 }
@@ -2906,8 +2909,17 @@ function rebuildConf() {
   scheduleQrUpdate(conf);
 }
 
-function copyConf() { navigator.clipboard.writeText(clientConfData).then(()=>toast('Copied!','success')); }
+function copyConf() { _saveConfRoutes(); navigator.clipboard.writeText(clientConfData).then(()=>toast('Copied!','success')); }
+function _saveConfRoutes() {
+  if (!confBaseData?.public_key) return;
+  const routes = document.getElementById('conf-routes')?.value.trim() || '';
+  const dns    = document.getElementById('conf-dns-override')?.value.trim() || '';
+  apiFetch('/api/' + activeIface + '/peers/' + encodeURIComponent(confBaseData.public_key),
+    {method:'PUT', body:JSON.stringify({client_routes: routes, client_dns: dns})})
+  .catch(()=>{});
+}
 function downloadConf() {
+  _saveConfRoutes();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([clientConfData], {type:'text/plain'}));
   a.download = clientConfName + '.conf';

@@ -763,7 +763,9 @@ def build_peer_list(iface, peers, live, meta):
             'rx_human': fmt_bytes(live_d.get('rx_bytes',0)),
             'tx_human': fmt_bytes(live_d.get('tx_bytes',0)),
             'ipt_rules': pm.get('ipt_rules',[]), 'post_up': pm.get('post_up',''),
-            'post_down': pm.get('post_down','')})
+            'post_down': pm.get('post_down',''),
+            'client_routes': pm.get('client_routes',''),
+            'client_dns': pm.get('client_dns','')})
     return result
 
 
@@ -1264,6 +1266,11 @@ def api_update_peer(iface, pubkey):
             pm = load_meta(iface).get(pubkey, {})
             pm['dns'] = data['dns']
             set_peer_meta(iface, pubkey, pm)
+        # client_routes and client_dns — saved from conf modal download
+        if 'client_routes' in data:
+            set_peer_meta(iface, pubkey, {'client_routes': data['client_routes']})
+        if 'client_dns' in data:
+            set_peer_meta(iface, pubkey, {'client_dns': data['client_dns']})
         break
     if not found: return jsonify({'error': 'Not found'}), 404
     write_wg_conf(iface, cfg, peers); reload_interface(iface)
@@ -1578,9 +1585,11 @@ def api_get_peer_privkey(iface, pubkey):
         'allowed_ips':   peer_data.get('AllowedIPs', ''),
         'dns':           peer_data.get('DNS', '') or peer_meta.get('dns', ''),
         'preshared_key': peer_data.get('PresharedKey', ''),
-        'server_pubkey': server_pub.strip(),
-        'listen_port':   ext_port,
-        'endpoint':      f'{pub_ip}:{ext_port}' if pub_ip else '',
+        'server_pubkey':  server_pub.strip(),
+        'listen_port':    ext_port,
+        'endpoint':       f'{pub_ip}:{ext_port}' if pub_ip else '',
+        'client_routes':  peer_meta.get('client_routes', ''),
+        'client_dns':     peer_meta.get('client_dns', ''),
     })
 
 

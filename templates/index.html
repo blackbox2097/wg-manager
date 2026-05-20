@@ -543,7 +543,7 @@ select option{background:var(--bg3)}
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Name / Key</th><th>Enabled</th><th>Status</th><th>IP</th><th>Transfer</th><th>Firewall</th><th>Key</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Name / Key</th><th>Enabled</th><th>Status</th><th>IP</th><th>Last Seen</th><th>Transfer</th><th>Firewall</th><th>Key</th><th>Actions</th></tr></thead>
           <tbody id="peers-tbody"><tr><td colspan="7"><div class="empty-state" style="padding:28px"><div class="spinner"></div></div></td></tr></tbody>
         </table>
       </div>
@@ -2425,13 +2425,14 @@ function renderDashboard() {
 function renderPeers(peers) {
   document.getElementById('peers-count').textContent = peers.length+' peer'+(peers.length!==1?'s':'');
   const tbody = document.getElementById('peers-tbody');
-  if (!peers.length) { tbody.innerHTML=`<tr><td colspan="7"><div class="empty-state" style="padding:36px"><h3>No Peers</h3><p>Click "Add Peer"</p></div></td></tr>`; return; }
+  if (!peers.length) { tbody.innerHTML=`<tr><td colspan="8"><div class="empty-state" style="padding:36px"><h3>No Peers</h3><p>Click "Add Peer"</p></div></td></tr>`; return; }
   tbody.innerHTML = peers.map(p=>`
     <tr data-pubkey="${esc(p.public_key)}" data-name="${esc(p.name||'Unnamed')}" data-ips="${esc(p.allowed_ips)}" data-readonly="${currentUser?.role==='readonly'?'1':'0'}" data-keystored="${p.key_stored?'1':'0'}" style="${!p.enabled?'opacity:.5':''}">
       <td><div class="peer-name">${esc(p.name||'Unnamed')}</div><div class="peer-key">${esc(p.public_key.substring(0,20))}…</div></td>
       <td><label class="toggle-wrap"><div class="toggle ${p.enabled?'on':''}"><input type="checkbox" ${p.enabled?'checked':''} style="display:none" data-action="toggle"/><div class="toggle-track"></div><div class="toggle-knob"></div></div></label></td>
       <td>${statusDot(p)}</td>
       <td><span class="peer-ip">${esc(p.allowed_ips)}</span></td>
+      <td style="font-size:11px;white-space:nowrap">${fmtHS(p.latest_handshake)}</td>
       <td class="transfer" style="font-size:11px"><span class="rx">↓ ${p.rx_human}</span><br/><span class="tx">↑ ${p.tx_human}</span></td>
       <td>${(p.ipt_rules&&p.ipt_rules.length)?`<span class="tag tag-purple">${p.ipt_rules.length} rule${p.ipt_rules.length!==1?'s':''}</span>`:`<span class="tag tag-dim">no rules</span>`}</td>
       <td>${currentUser?.role==='admin' ? (p.key_stored

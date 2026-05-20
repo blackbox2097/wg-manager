@@ -1,0 +1,32 @@
+services:
+  wg-manager:
+    image: ghcr.io/blackbox2097/wg-manager:latest
+    container_name: wg-manager
+    restart: unless-stopped
+
+    # WireGuard needs full network access to the host
+    network_mode: host
+
+    # Required kernel capabilities for WireGuard + iptables
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+
+    # Persist WireGuard configs and the DB
+    volumes:
+      - /etc/wireguard:/etc/wireguard
+
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}        # Required — set in .env
+      - SESSION_MINUTES=${SESSION_MINUTES:-30}
+      - WG_DIR=/etc/wireguard
+      - WG_META_DIR=/etc/wireguard
+      - WG_DB_PATH=/etc/wireguard/wg-manager.db
+
+    # Kernel module for WireGuard (needed if wireguard.ko not auto-loaded)
+    # volumes entry below handles this; the module must exist on the host
+    devices:
+      - /dev/net/tun:/dev/net/tun
